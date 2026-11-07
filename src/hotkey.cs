@@ -281,6 +281,7 @@ class TaskBoardHotkey : Form
     static int Main(string[] args)
     {
         if (args.Length >= 2 && args[0] == "--check") return CheckWindow(args[1]);
+        if (args.Length >= 1 && args[0].StartsWith("--google-", StringComparison.Ordinal)) return GoogleCli.Run(Path.GetDirectoryName(Application.ExecutablePath), args);
         if (args.Length >= 1 && args[0] == "--commit") return Commit(Path.GetDirectoryName(Application.ExecutablePath));
         if (args.Length >= 1 && args[0] == "--commit-now") return CommitNow(Path.GetDirectoryName(Application.ExecutablePath));
         if (args.Length >= 1 && args[0] == "--record") return Recorder.Record(Path.GetDirectoryName(Application.ExecutablePath), ReadWish(Path.GetDirectoryName(Application.ExecutablePath)));
