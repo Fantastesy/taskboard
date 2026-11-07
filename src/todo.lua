@@ -48,9 +48,9 @@ function Initialize()
 end
 
 -- ---------- Anzeige-Art: 'sidebar' (Seitenleiste am rechten Rand), 'desktop', 'both' ----------
--- Variable Mode aus prefs.inc (schreibt das Einstellungen-Fenster). Der Rand-Streifen (Config ObsidianTodo\Rand)
+-- Variable Mode aus prefs.inc (schreibt das Einstellungen-Fenster). Der Rand-Streifen (Config TaskBoard\Rand)
 -- wird hier mit ein- bzw. ausgeschaltet, damit es auch nach Updates ohne Installer-Zutun stimmt.
-local RAND = 'ObsidianTodo\\Rand'
+local RAND = 'TaskBoard\\Rand'
 local mode, workH
 local panel = false              -- 'both': gerade als Panel am Rand (sidebar.lua: PanelOn/PanelOff)
 local deskX, deskY               -- 'both': Desktop-Platz, an den die Liste danach zurueckkehrt
@@ -105,7 +105,7 @@ function setupMode()
 			if px and mode == 'both' then
 				SKIN:Bang('!Move', px, py)
 				SKIN:Bang('!SetTransparency', '255')
-				SKIN:Bang('!CommandMeasure', 'MeasureSide', 'PanelReset()', 'ObsidianTodo\\Rand')
+				SKIN:Bang('!CommandMeasure', 'MeasureSide', 'PanelReset()', 'TaskBoard\\Rand')
 			end
 		end
 		-- kommt von der Seitenleiste: wieder oben rechts auf den Desktop
@@ -838,14 +838,14 @@ local function findChild(t, lineNo, orig)
 end
 
 -- Rausklicken soll nichts loeschen: Eingabefelder haben FocusDismiss=0, dazu laeuft
--- "TodoHotkey.exe --commit" (hotkey.cs). Verliert das Feld den Fokus, legt der Waechter commit.flag an
+-- "TaskBoardHotkey.exe --commit" (hotkey.cs). Verliert das Feld den Fokus, legt der Waechter commit.flag an
 -- und drueckt Enter - der Text wird uebernommen. commitWatch() beim Oeffnen, wasCommit() beim Uebernehmen.
 local watchAt = 0
 local function commitWatch()
 	local dir = SKIN:GetVariable('@')
 	os.remove(dir .. 'commit.flag')
 	watchAt = os.time()
-	SKIN:Bang('["' .. dir .. 'TodoHotkey.exe" --commit]')
+	SKIN:Bang('["' .. dir .. 'TaskBoardHotkey.exe" --commit]')
 end
 -- Notbremse: Solange ein Feld offen ist, kommen Klicks auf Rainmeter-Fenster gar nicht an. Fehlt der
 -- Waechter (Lebenszeichen watch.alive aelter als 3 s), haengt sonst alles -> Waechter neu starten.
@@ -862,7 +862,7 @@ local function keepWatch(open)
 	if fh then fh:close() end
 	if n and os.time() - n < 3 then return end
 	watchAt = os.time()
-	SKIN:Bang('["' .. dir .. 'TodoHotkey.exe" --commit]')
+	SKIN:Bang('["' .. dir .. 'TaskBoardHotkey.exe" --commit]')
 end
 local function wasCommit()
 	local p = SKIN:GetVariable('@') .. 'commit.flag'
@@ -1175,7 +1175,7 @@ function Add()
 	refresh(true)
 end
 
--- ---------- Formular (Config ObsidianTodo\Formular, form.lua) fuer neue Punkte und Rechtsklick > bearbeiten ----------
+-- ---------- Formular (Config TaskBoard\Formular, form.lua) fuer neue Punkte und Rechtsklick > bearbeiten ----------
 local dialog
 -- i = 0: neuer Punkt, sonst Punkt i bearbeiten; top = 1: per Tastenkuerzel geoeffnet -> ueber allen Fenstern
 function OpenDialog(i, top)
@@ -1204,10 +1204,10 @@ function OpenDialog(i, top)
 	out:write(table.concat(f, '\n'))
 	out:close()
 	-- Formular erscheint dort, wo sonst die Hilfe steht; ist es schon offen, liest es die neuen Werte ein
-	SKIN:Bang('!DeactivateConfig', 'ObsidianTodo\\Einstellungen')
-	SKIN:Bang('!ActivateConfig', 'ObsidianTodo\\Formular', 'Formular.ini')
-	SKIN:Bang('!Refresh', 'ObsidianTodo\\Formular')
-	SKIN:Bang('!ZPos', top == 1 and '1' or '-2', 'ObsidianTodo\\Formular')
+	SKIN:Bang('!DeactivateConfig', 'TaskBoard\\Einstellungen')
+	SKIN:Bang('!ActivateConfig', 'TaskBoard\\Formular', 'Formular.ini')
+	SKIN:Bang('!Refresh', 'TaskBoard\\Formular')
+	SKIN:Bang('!ZPos', top == 1 and '1' or '-2', 'TaskBoard\\Formular')
 end
 
 function Edit(i) OpenDialog(i) end

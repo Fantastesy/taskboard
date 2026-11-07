@@ -1,8 +1,8 @@
-// TodoHotkey: globales Tastenkuerzel fuer "Neuer Punkt" der Rainmeter-Todo-Liste.
+// TaskBoardHotkey: globales Tastenkuerzel fuer "Neuer Punkt" der Rainmeter-Todo-Liste.
 // Wartet unsichtbar auf Win+Shift+T (falls belegt: Strg+Alt+T) und oeffnet dann das Formular.
 // Wird von Todo.ini beim Laden gestartet, laeuft nur einmal (Mutex).
-// Aufruf: TodoHotkey.exe "<Pfad zu Rainmeter.exe>"
-// Bauen: csc /target:winexe /out:TodoHotkey.exe hotkey.cs
+// Aufruf: TaskBoardHotkey.exe "<Pfad zu Rainmeter.exe>"
+// Bauen: csc /target:winexe /out:TaskBoardHotkey.exe hotkey.cs
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -10,7 +10,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-class TodoHotkey : Form
+class TaskBoardHotkey : Form
 {
     [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mod, uint vk);
     [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int pid);
@@ -21,7 +21,7 @@ class TodoHotkey : Form
     public string Combo;
 
     // Kuerzel als Text: "ctrl+alt+shift+win+<Taste>" (Taste = Name aus System.Windows.Forms.Keys, z. B. T, Space, F5, D1).
-    // Das Einstellungen-Fenster nimmt es mit "TodoHotkey.exe --record" auf und schreibt "Hotkey=..." in prefs.inc.
+    // Das Einstellungen-Fenster nimmt es mit "TaskBoardHotkey.exe --record" auf und schreibt "Hotkey=..." in prefs.inc.
     public static bool Parse(string key, out uint mod, out uint vk)
     {
         mod = MOD_NOREPEAT; vk = 0;
@@ -71,7 +71,7 @@ class TodoHotkey : Form
         return Parse(key, out mod, out vk) && RegisterHotKey(Handle, 1, mod, vk);
     }
 
-    TodoHotkey(string rainmeter, string wish)
+    TaskBoardHotkey(string rainmeter, string wish)
     {
         this.rainmeter = rainmeter;
         ShowInTaskbar = false;
@@ -106,12 +106,12 @@ class TodoHotkey : Form
         {
             // Rainmeter darf das Formular in den Vordergrund holen
             AllowSetForegroundWindow(-1);
-            Process.Start(rainmeter, "!CommandMeasure MeasureTodo \"OpenDialog(0, 1)\" ObsidianTodo");
+            Process.Start(rainmeter, "!CommandMeasure MeasureTodo \"OpenDialog(0, 1)\" TaskBoard");
         }
         base.WndProc(ref m);
     }
 
-    // ---------- Pruefung fuer den Installer: TodoHotkey.exe --check "<Fensterende>" ----------
+    // ---------- Pruefung fuer den Installer: TaskBoardHotkey.exe --check "<Fensterende>" ----------
     // Exitcode 0, wenn ein sichtbares Fenster existiert, dessen Titel so endet (Rainmeter benennt
     // Skin-Fenster nach dem Pfad der .ini), sonst 1. So muss der Installer nichts zur Laufzeit uebersetzen.
     delegate bool EnumProc(IntPtr h, IntPtr p);
@@ -131,7 +131,7 @@ class TodoHotkey : Form
         return found ? 0 : 1;
     }
 
-    // ---------- Eingabefeld nicht verlieren: TodoHotkey.exe --commit ----------
+    // ---------- Eingabefeld nicht verlieren: TaskBoardHotkey.exe --commit ----------
     // Rainmeters Eingabefeld (InputText, Fenster "InputBox") verwirft den Text, wenn man woanders hinklickt.
     // Die Skins oeffnen es darum mit FocusDismiss=0 und starten dazu diesen Waechter: Klickt man ausserhalb
     // des Feldes (auch auf ein Rainmeter-Fenster - die holen sich beim Klick keinen Fokus!) oder wechselt
@@ -165,7 +165,7 @@ class TodoHotkey : Form
     {
         // Ein Feld nach dem anderen: Wurde gerade eins uebernommen und gleich das naechste geoeffnet
         // (z. B. Name -> "+ Notiz"), laeuft der alte Waechter evtl. noch kurz. Darauf warten statt aufzugeben.
-        using (var m = new Mutex(false, "ObsidianTodoCommit"))
+        using (var m = new Mutex(false, "TaskBoardCommit"))
         {
             bool got;
             try { got = m.WaitOne(3000); } catch (AbandonedMutexException) { got = true; }
@@ -291,7 +291,7 @@ class TodoHotkey : Form
     static void Run(string[] args)
     {
         bool first;
-        using (new Mutex(true, "ObsidianTodoHotkey", out first))
+        using (new Mutex(true, "TaskBoardHotkey", out first))
         {
             if (!first) return;
             string dir = Path.GetDirectoryName(Application.ExecutablePath);
@@ -299,7 +299,7 @@ class TodoHotkey : Form
             string rm = args.Length > 0 && File.Exists(args[0])
                 ? args[0]
                 : Path.GetFullPath(Path.Combine(dir, @"..\..\..\Rainmeter.exe"));
-            var f = new TodoHotkey(rm, ReadWish(dir));
+            var f = new TaskBoardHotkey(rm, ReadWish(dir));
             // gewaehltes Kuerzel fuer Hilfe/Einstellungen festhalten
             File.WriteAllText(Path.Combine(dir, "hotkey.txt"), f.Combo ?? "keins frei");
             // fuer das Einstellungen-Fenster (hebt das aktive Kuerzel hervor)
@@ -310,7 +310,7 @@ class TodoHotkey : Form
     }
 }
 
-// ---------- Neues Kuerzel aufnehmen: TodoHotkey.exe --record ----------
+// ---------- Neues Kuerzel aufnehmen: TaskBoardHotkey.exe --record ----------
 // Kleines dunkles Fenster: "Neue Tastenkombination druecken". Schreibt Hotkey=... in prefs.inc (UTF-16) und endet mit 0;
 // Esc oder Fenster verlassen = abbrechen (1). Prueft vorher, ob ein anderes Programm die Kombination schon belegt.
 class Recorder : Form
@@ -373,7 +373,7 @@ class Recorder : Form
         // nur Zusatztasten gedrueckt: Vorschau zeigen
         if (k == Keys.ControlKey || k == Keys.ShiftKey || k == Keys.Menu || k == Keys.LWin || k == Keys.RWin)
         {
-            info.Text = mods.Count > 0 ? TodoHotkey.Display(string.Join("+", mods)) + "+ …" : "Neue Tastenkombination drücken …";
+            info.Text = mods.Count > 0 ? TaskBoardHotkey.Display(string.Join("+", mods)) + "+ …" : "Neue Tastenkombination drücken …";
             return;
         }
         bool fkey = k >= Keys.F1 && k <= Keys.F24;
@@ -387,18 +387,18 @@ class Recorder : Form
         string key = string.Join("+", mods);
         uint mod, vk;
         // schon von einem anderen Programm belegt? (das eigene, laufende Kuerzel zaehlt nicht)
-        if (!key.Equals(current, StringComparison.OrdinalIgnoreCase) && TodoHotkey.Parse(key, out mod, out vk))
+        if (!key.Equals(current, StringComparison.OrdinalIgnoreCase) && TaskBoardHotkey.Parse(key, out mod, out vk))
         {
             if (!RegisterHotKey(Handle, 7, mod, vk))
             {
-                info.Text = TodoHotkey.Display(key);
+                info.Text = TaskBoardHotkey.Display(key);
                 hint.Text = "Diese Kombination ist schon belegt – bitte eine andere  ·  Esc = abbrechen";
                 return;
             }
             UnregisterHotKey(Handle, 7);
         }
         Result = key;
-        info.Text = TodoHotkey.Display(key) + "  ✓";
+        info.Text = TaskBoardHotkey.Display(key) + "  ✓";
         Refresh();
         System.Threading.Thread.Sleep(400);
         Close();

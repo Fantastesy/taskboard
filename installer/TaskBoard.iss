@@ -5,7 +5,7 @@
   #define AppVersion "0.0.0"
 #endif
 #define AppName "Task Board"
-#define SkinDir "..\dist\skin\ObsidianTodo"
+#define SkinDir "..\dist\skin\TaskBoard"
 
 [Setup]
 AppId={{16E88833-5A38-4DDC-8401-D15AD3FA1B60}
@@ -14,8 +14,10 @@ AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=Task Board
 VersionInfoVersion={#AppVersion}
-; bestehende Installationen behalten ihren Ordner (Inno nimmt den vorherigen), neue landen unter "Task Board"
-DefaultDirName={localappdata}\Programs\Task Board
+; Programmordner: neu unter "Task Board"; bestehende Installationen bleiben, wo sie sind - nur ein Ordner
+; namens "Obsidian Todo" (bis 1.3.0) wird zu "Task Board" daneben (DefDir; helper.ps1 zieht um und raeumt auf)
+DefaultDirName={code:DefDir}
+UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=lowest
@@ -36,11 +38,11 @@ de.WelcomeLabel2=Damit bekommst du eine Todo-Liste auf dem Desktop, die direkt i
 [Files]
 Source: "helper.ps1"; Flags: dontcopy
 Source: "helper.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SkinDir}\*"; DestDir: "{app}\ObsidianTodo"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SkinDir}\*"; DestDir: "{app}\TaskBoard"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
 ; altes Hilfe-Fenster (seit 1.2.0: Einstellungen)
-Type: filesandordirs; Name: "{app}\ObsidianTodo\Hilfe"
+Type: filesandordirs; Name: "{app}\TaskBoard\Hilfe"
 ; Startmenue-Eintrag von vor der Umbenennung in Task Board
 Type: files; Name: "{userprograms}\Obsidian To-do entfernen.lnk"
 
@@ -49,11 +51,13 @@ Name: "{userprograms}\Task Board entfernen"; Filename: "{uninstallexe}"; IconFil
 
 [UninstallDelete]
 ; vom Skin zur Laufzeit erzeugte Dateien (settings.inc, hotkey.txt, ...)
-Type: filesandordirs; Name: "{app}\ObsidianTodo"
+Type: filesandordirs; Name: "{app}\TaskBoard"
 
 [Code]
 const
-  RegKey = 'Software\ObsidianTodo';
+  RegKey = 'Software\TaskBoard';
+  OldRegKey = 'Software\ObsidianTodo';   { bis 1.3.0 }
+  UninstKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{16E88833-5A38-4DDC-8401-D15AD3FA1B60}_is1';
 
 var
   RainmeterExe, SkinPath, ObsidianExe: String;
@@ -71,6 +75,24 @@ var
   LastVaultForTodo: String;
   SilentVault: String;
   DownloadPage: TDownloadWizardPage;
+  OldAppDir: String;
+
+{ bisheriger Programmordner (leer bei Erstinstallation) }
+function PrevAppDir: String;
+begin
+  Result := '';
+  if not RegQueryStringValue(HKCU, UninstKey, 'Inno Setup: App Path', Result) then Result := '';
+  Result := RemoveBackslash(Result);
+end;
+
+function DefDir(Param: String): String;
+begin
+  Result := PrevAppDir;
+  if Result = '' then
+    Result := ExpandConstant('{localappdata}\Programs\Task Board')
+  else if CompareText(ExtractFileName(Result), 'Obsidian Todo') = 0 then
+    Result := AddBackslash(ExtractFileDir(Result)) + 'Task Board';
+end;
 
 function OnDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
 begin
@@ -200,8 +222,10 @@ begin
   TodoInList := TStringList.Create;
   ExtractTemporaryFile('helper.ps1');
   Detect;
-  RegQueryStringValue(HKCU, RegKey, 'Vault', PrevVault);
-  RegQueryStringValue(HKCU, RegKey, 'TodoDir', PrevTodoDir);
+  if not RegQueryStringValue(HKCU, RegKey, 'Vault', PrevVault) then
+    RegQueryStringValue(HKCU, OldRegKey, 'Vault', PrevVault);
+  if not RegQueryStringValue(HKCU, RegKey, 'TodoDir', PrevTodoDir) then
+    RegQueryStringValue(HKCU, OldRegKey, 'TodoDir', PrevTodoDir);
 
   { Seite: Voraussetzungen }
   PrereqPage := CreateCustomPage(wpSelectDir, 'Benötigte Programme', 'Was zusätzlich installiert wird');
@@ -458,16 +482,22 @@ begin
   Result := '';
   if WizardSilent then ApplySilentDefaults;
 
-  { laufendes Tastenkuerzel-Programm beenden, sonst laesst sich TodoHotkey.exe nicht ersetzen }
+  { laufendes Tastenkuerzel-Programm beenden, sonst laesst sich TaskBoardHotkey.exe nicht ersetzen
+    (TodoHotkey.exe = Name bis 1.3.0) }
+  Exec('taskkill.exe', '/F /IM TaskBoardHotkey.exe', '', SW_HIDE, ewWaitUntilTerminated, RC);
   Exec('taskkill.exe', '/F /IM TodoHotkey.exe', '', SW_HIDE, ewWaitUntilTerminated, RC);
+  OldAppDir := PrevAppDir;
 
-  { ohne Fenster (z. B. automatischer Test) laedt das Hilfsskript Rainmeter selbst }
-  if WizardSilent and NeedRainmeter then
+  { ohne Fenster (z. B. automatischer Test) laedt das Hilfsskript Rainmeter selbst - aber nie bei einem Update:
+    dann gibt es Rainmeter schon (z. B. portabel und gerade beendet), ein zweites waere falsch }
+  if WizardSilent and NeedRainmeter and (OldAppDir <> '') then
+    Result := 'Rainmeter wurde nicht gefunden. Bitte Rainmeter starten und das Update noch einmal ausführen.'
+  else if WizardSilent and NeedRainmeter then
   begin
     RunHelper('-Mode install -What rainmeter');
     Detect;
   end;
-  if NeedRainmeter then
+  if NeedRainmeter and (Result = '') then
     Result := 'Rainmeter konnte nicht installiert werden. Bitte installiere es von rainmeter.net und starte dieses Setup danach noch einmal.';
 end;
 
@@ -481,6 +511,8 @@ begin
       ' -Vault ' + Q(ChosenVault) + ' -TodoDir ' + Q(TodoPage.Values[0]) +
       ' -RainmeterExe ' + Q(RainmeterExe) + ' -SkinPath ' + Q(SkinPath);
     if NewVaultChosen then Args := Args + ' -NewVault';
+    if (OldAppDir <> '') and (CompareText(OldAppDir, RemoveBackslash(ExpandConstant('{app}'))) <> 0) then
+      Args := Args + ' -OldApp ' + Q(OldAppDir);
     if RunHelper(Args) then
     begin
       RegWriteStringValue(HKCU, RegKey, 'Vault', RemoveBackslash(ChosenVault));
@@ -488,7 +520,7 @@ begin
     end
     else if not WizardSilent then
       MsgBox('Beim Einrichten ist etwas schiefgegangen. Details stehen in ' +
-        ExpandConstant('{%TEMP}\ObsidianTodo-Setup.log'), mbError, MB_OK);
+        ExpandConstant('{%TEMP}\TaskBoard-Setup.log'), mbError, MB_OK);
   end;
 end;
 
@@ -501,6 +533,7 @@ begin
     Exec(PowerShellExe, '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
       ExpandConstant('{app}\helper.ps1') + '" -Mode uninstall', '', SW_HIDE, ewWaitUntilTerminated, RC);
     RegDeleteKeyIncludingSubkeys(HKCU, RegKey);
+    RegDeleteKeyIncludingSubkeys(HKCU, OldRegKey);
   end;
 end;
 

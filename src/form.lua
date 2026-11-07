@@ -1,4 +1,4 @@
--- Formular fuer neue Punkte und "bearbeiten" (Config ObsidianTodo\Formular), dunkel wie die Liste.
+-- Formular fuer neue Punkte und "bearbeiten" (Config TaskBoard\Formular), dunkel wie die Liste.
 -- Liest @Resources\dialog-in.txt (schreibt todo.lua), schreibt @Resources\form-out.txt
 -- und ruft danach DialogDone() in der Liste auf. Datei muss als UTF-16 LE gespeichert sein.
 
@@ -422,14 +422,14 @@ local function render()
 end
 
 -- Rausklicken soll nichts loeschen: Eingabefelder haben FocusDismiss=0, dazu laeuft
--- "TodoHotkey.exe --commit" (hotkey.cs). Verliert das Feld den Fokus, legt der Waechter commit.flag an
+-- "TaskBoardHotkey.exe --commit" (hotkey.cs). Verliert das Feld den Fokus, legt der Waechter commit.flag an
 -- und drueckt Enter - der Text wird uebernommen. commitWatch() beim Oeffnen, wasCommit() beim Uebernehmen.
 local watchAt = 0
 local function commitWatch()
 	local dir = SKIN:GetVariable('@')
 	os.remove(dir .. 'commit.flag')
 	watchAt = os.time()
-	SKIN:Bang('["' .. dir .. 'TodoHotkey.exe" --commit]')
+	SKIN:Bang('["' .. dir .. 'TaskBoardHotkey.exe" --commit]')
 end
 -- Notbremse: Solange ein Feld offen ist, kommen Klicks auf Rainmeter-Fenster gar nicht an. Fehlt der
 -- Waechter (Lebenszeichen watch.alive aelter als 3 s), haengt sonst alles -> Waechter neu starten.
@@ -443,7 +443,7 @@ local function keepWatch(open)
 	if fh then fh:close() end
 	if n and os.time() - n < 3 then return end
 	watchAt = os.time()
-	SKIN:Bang('["' .. dir .. 'TodoHotkey.exe" --commit]')
+	SKIN:Bang('["' .. dir .. 'TaskBoardHotkey.exe" --commit]')
 end
 local function wasCommit()
 	local p = SKIN:GetVariable('@') .. 'commit.flag'
@@ -466,7 +466,7 @@ function Update()
 			pending.kicked = true
 			local dir = SKIN:GetVariable('@')
 			os.remove(dir .. 'commit.flag')
-			SKIN:Bang('["' .. dir .. 'TodoHotkey.exe" --commit-now]')
+			SKIN:Bang('["' .. dir .. 'TaskBoardHotkey.exe" --commit-now]')
 		elseif age >= 4 then
 			local p = pending
 			pending, input = nil, nil
@@ -590,7 +590,7 @@ local function finish(action)
 	end
 	local fh = io.open(res .. 'form-out.txt', 'wb')
 	if fh then fh:write(table.concat(out, '\n')); fh:close() end
-	SKIN:Bang('!CommandMeasure', 'MeasureTodo', 'DialogDone()', 'ObsidianTodo')
+	SKIN:Bang('!CommandMeasure', 'MeasureTodo', 'DialogDone()', 'TaskBoard')
 	SKIN:Bang('!DeactivateConfig')
 end
 

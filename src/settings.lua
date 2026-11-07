@@ -1,4 +1,4 @@
--- Einstellungen-Fenster (Config ObsidianTodo\Einstellungen): Tags verwalten und von Hand nach Updates suchen.
+-- Einstellungen-Fenster (Config TaskBoard\Einstellungen): Tags verwalten und von Hand nach Updates suchen.
 -- Alles andere im Fenster sind feste Knoepfe aus build-skin.ps1. Datei muss als UTF-16 LE gespeichert sein.
 --
 -- Tags stehen in prefs.inc als "Tags=arbeit:blau,privat:pink" (bleibt bei Updates erhalten).
@@ -19,14 +19,14 @@ local adding = false   -- "+ Neuer Tag"-Feld offen
 local addBox          -- Flaeche von "+ Neuer Tag": { x, y, w, shape }
 
 -- Rausklicken soll nichts loeschen: Eingabefelder haben FocusDismiss=0, dazu laeuft
--- "TodoHotkey.exe --commit" (hotkey.cs). Verliert das Feld den Fokus, legt der Waechter commit.flag an
+-- "TaskBoardHotkey.exe --commit" (hotkey.cs). Verliert das Feld den Fokus, legt der Waechter commit.flag an
 -- und drueckt Enter - der Text wird uebernommen. commitWatch() beim Oeffnen, wasCommit() beim Uebernehmen.
 local watchAt = 0
 local function commitWatch()
 	local dir = SKIN:GetVariable('@')
 	os.remove(dir .. 'commit.flag')
 	watchAt = os.time()
-	SKIN:Bang('["' .. dir .. 'TodoHotkey.exe" --commit]')
+	SKIN:Bang('["' .. dir .. 'TaskBoardHotkey.exe" --commit]')
 end
 -- Notbremse: Solange ein Feld offen ist, kommen Klicks auf Rainmeter-Fenster gar nicht an. Fehlt der
 -- Waechter (Lebenszeichen watch.alive aelter als 3 s), haengt sonst alles -> Waechter neu starten.
@@ -40,7 +40,7 @@ local function keepWatch(open)
 	if fh then fh:close() end
 	if n and os.time() - n < 3 then return end
 	watchAt = os.time()
-	SKIN:Bang('["' .. dir .. 'TodoHotkey.exe" --commit]')
+	SKIN:Bang('["' .. dir .. 'TaskBoardHotkey.exe" --commit]')
 end
 local function wasCommit()
 	local p = SKIN:GetVariable('@') .. 'commit.flag'
@@ -134,7 +134,7 @@ local function save()
 	local s = table.concat(parts, ',')
 	SKIN:Bang('!SetVariable', 'Tags', s)
 	SKIN:Bang('!WriteKeyValue', 'Variables', 'Tags', s, '#@#prefs.inc')
-	SKIN:Bang('!Refresh', 'ObsidianTodo')
+	SKIN:Bang('!Refresh', 'TaskBoard')
 	render()
 end
 

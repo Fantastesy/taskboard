@@ -1,7 +1,7 @@
-﻿# Baut Task Board (frueher Obsidian Todo): dist\skin\ObsidianTodo (fertiger Rainmeter-Skin) und dist\TaskBoard-Setup-<version>.exe
+﻿# Baut Task Board (frueher Obsidian Todo): dist\skin\TaskBoard (fertiger Rainmeter-Skin) und dist\TaskBoard-Setup-<version>.exe
 # Dazu eine gleiche Kopie dist\ObsidianTodo-Setup-<version>.exe: Versionen bis 1.3.0 suchen beim Auto-Update nur diesen
-# Namen - beide Dateien mit ins Release hochladen. (Interne Namen wie der Ordner ObsidianTodo bleiben, sonst gingen
-# beim Update Einstellungen und Position verloren.)
+# Namen - beide Dateien mit ins Release hochladen. Seit dem Umzug heissen auch alle internen Namen TaskBoard
+# (Setup zieht eine alte ObsidianTodo-Installation selbst um, siehe installerhelper.ps1 migrate).
 # Aufruf: powershell -File build.ps1 [-Repo besitzer/obsidian-todo] [-Iscc <Pfad zu ISCC.exe>]
 # ISCC.exe wird sonst ueber die Umgebungsvariable ISCC oder die Standard-Installationsorte gesucht.
 param(
@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $src = Join-Path $root 'src'
 $dist = Join-Path $root 'dist'
-$skin = Join-Path $dist 'skin\ObsidianTodo'
+$skin = Join-Path $dist 'skin\TaskBoard'
 $res = Join-Path $skin '@Resources'
 $version = (Get-Content (Join-Path $root 'VERSION') -TotalCount 1).Trim()
 if (-not $Repo -and (Test-Path (Join-Path $root 'REPO'))) { $Repo = (Get-Content (Join-Path $root 'REPO') -TotalCount 1).Trim() }
@@ -38,7 +38,7 @@ $ascii = New-Object Text.UTF8Encoding($false)
 
 # 3. Tastenkuerzel-Programm mit dem C#-Compiler aus .NET Framework 4 (auf jedem Windows 10/11 vorhanden)
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-& $csc /nologo /target:winexe /optimize+ "/out:$(Join-Path $res 'TodoHotkey.exe')" (Join-Path $src 'hotkey.cs')
+& $csc /nologo /target:winexe /optimize+ "/out:$(Join-Path $res 'TaskBoardHotkey.exe')" (Join-Path $src 'hotkey.cs')
 if ($LASTEXITCODE -ne 0) { throw 'hotkey.cs liess sich nicht kompilieren' }
 
 # 4. Setup bauen
@@ -47,7 +47,7 @@ if (-not $Iscc) {
         Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 }
 if (-not $Iscc) { throw 'ISCC.exe (Inno Setup 7) nicht gefunden - Pfad mit -Iscc angeben' }
-& $Iscc /Q "/DAppVersion=$version" (Join-Path $root 'installer\ObsidianTodo.iss')
+& $Iscc /Q "/DAppVersion=$version" (Join-Path $root 'installer\TaskBoard.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup meldet einen Fehler' }
 $exe = Join-Path $dist "TaskBoard-Setup-$version.exe"
 Copy-Item $exe (Join-Path $dist "ObsidianTodo-Setup-$version.exe")   # alter Name fuer Auto-Update bis 1.3.0

@@ -40,8 +40,8 @@ $inc = "[Variables]`r`nTodoFile=$todo`r`nArchiveFile=$archive`r`nVaultName=$(Spl
 [IO.File]::WriteAllText((Join-Path $res 'settings.inc'), $inc, [Text.Encoding]::Unicode)
 
 # fuer kuenftige Updates merken (das Setup liest diese Werte)
-New-Item -Path 'HKCU:\Software\ObsidianTodo' -Force | Out-Null
-Set-ItemProperty 'HKCU:\Software\ObsidianTodo' -Name Vault -Value $vault
-Set-ItemProperty 'HKCU:\Software\ObsidianTodo' -Name TodoDir -Value $dir
-Set-ItemProperty 'HKCU:\Software\ObsidianTodo' -Name TodoFile -Value $todo
+New-Item -Path 'HKCU:\Software\TaskBoard' -Force | Out-Null
+Set-ItemProperty 'HKCU:\Software\TaskBoard' -Name Vault -Value $vault
+Set-ItemProperty 'HKCU:\Software\TaskBoard' -Name TodoDir -Value $dir
+Set-ItemProperty 'HKCU:\Software\TaskBoard' -Name TodoFile -Value $todo
 [Console]::Out.Write('ok')

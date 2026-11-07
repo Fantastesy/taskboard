@@ -1,5 +1,5 @@
-' Knoepfe in der Todo-Erinnerung: todo-rm:done/<id> oder todo-rm:snooze/<id>
-' (registriert unter HKCU\Software\Classes\todo-rm). Gibt die Aktion an todo.lua weiter, ohne Konsolenfenster.
+' Knoepfe in der Todo-Erinnerung: taskboard:done/<id> oder taskboard:snooze/<id>
+' (registriert unter HKCU\Software\Classes\taskboard). Gibt die Aktion an todo.lua weiter, ohne Konsolenfenster.
 Option Explicit
 Dim url, rest, parts, act, id, fso, rm
 If WScript.Arguments.Count < 1 Then WScript.Quit
@@ -18,4 +18,4 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 rm = ""
 If WScript.Arguments.Count > 1 Then rm = WScript.Arguments(1)
 If rm = "" Or Not fso.FileExists(rm) Then rm = fso.GetAbsolutePathName(fso.BuildPath(fso.GetParentFolderName(WScript.ScriptFullName), "..\..\..\Rainmeter.exe"))
-CreateObject("WScript.Shell").Run """" & rm & """ !CommandMeasure MeasureTodo ""ToastAction('" & act & "', " & id & ")"" ObsidianTodo", 0, False
+CreateObject("WScript.Shell").Run """" & rm & """ !CommandMeasure MeasureTodo ""ToastAction('" & act & "', " & id & ")"" TaskBoard", 0, False

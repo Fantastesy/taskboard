@@ -1,6 +1,6 @@
--- Seitenleiste fuer die Rainmeter-Todo-Liste (Config ObsidianTodo\Rand).
+-- Seitenleiste fuer die Rainmeter-Todo-Liste (Config TaskBoard\Rand).
 -- Ein unsichtbarer, 1 Pixel schmaler Streifen am rechten (oder linken) Rand des Hauptbildschirms, immer im
--- Vordergrund. Beruehrt die Maus den Rand, faehrt die Liste (Config ObsidianTodo) als bildschirmhohes Panel
+-- Vordergrund. Beruehrt die Maus den Rand, faehrt die Liste (Config TaskBoard) als bildschirmhohes Panel
 -- von aussen herein; verlaesst die Maus die Liste, faehrt sie nach kurzer Zeit wieder hinaus.
 --
 -- Einstellungen (prefs.inc, schreibt das Einstellungen-Fenster):
@@ -12,7 +12,7 @@
 -- Bei 'both' sagt der Streifen der Liste vorher PanelOn() (Desktop-Platz merken, bildschirmhoch werden) und
 -- nachher PanelOff() (zurueck an den Desktop-Platz). Laeuft mit Update=16, tut aber nur bei Animation etwas.
 
-local LIST = 'ObsidianTodo'
+local LIST = 'TaskBoard'
 local MARGIN = 8           -- Abstand zum Bildschirmrand oben, unten und seitlich (wie eine schwebende KDE-Leiste)
 local EDGE_FREE = 0.2      -- Anteil der Hoehe oben und unten ohne Rand-Streifen (Ecken loesen nichts aus)
 local SPEEDS = {           -- Bilder fuer die Animation, Sekunden bis zum Hinausfahren nach Maus-weg

@@ -43,12 +43,12 @@ Update=1000
 AccurateText=1
 DynamicWindowSize=1
 ; Tastenkuerzel-Helfer (Strg+Alt+T bzw. Win+Shift+T -> Neuer Punkt); laeuft nur einmal, bleibt bei Refresh bestehen
-OnRefreshAction=["#@#TodoHotkey.exe" "#PROGRAMPATH#Rainmeter.exe"]
+OnRefreshAction=["#@#TaskBoardHotkey.exe" "#PROGRAMPATH#Rainmeter.exe"]
 ContextTitle=Todo.md in Obsidian öffnen
 ContextAction=$obs
 ; Seitenleiste: Maus in der Liste haelt sie offen, Verlassen laesst sie hinausfahren (sidebar.lua)
-MouseOverAction=[!CommandMeasure MeasureSide "Enter()" "ObsidianTodo\Rand"]
-MouseLeaveAction=[!CommandMeasure MeasureSide "Leave()" "ObsidianTodo\Rand"][!CommandMeasure MeasureTodo "DragCancel()"]
+MouseOverAction=[!CommandMeasure MeasureSide "Enter()" "TaskBoard\Rand"]
+MouseLeaveAction=[!CommandMeasure MeasureSide "Leave()" "TaskBoard\Rand"][!CommandMeasure MeasureTodo "DragCancel()"]
 
 [Metadata]
 Name=Task Board
@@ -167,7 +167,7 @@ SolidColor=32,32,42,255
 FontColor=#ColorText#
 FontFace=#FontFace#
 FontSize=#FontSize#
-; bleibt beim Rausklicken offen, TodoHotkey.exe --commit uebernimmt dann den Text (todo.lua openEditor)
+; bleibt beim Rausklicken offen, TaskBoardHotkey.exe --commit uebernimmt dann den Text (todo.lua openEditor)
 FocusDismiss=0
 DefaultValue=#EditText#
 Command1=[!SetVariable NewItem """`$UserInput`$"""][!CommandMeasure MeasureTodo "SaveEdit()"]
@@ -242,7 +242,7 @@ AntiAlias=1
 Text=
 
 ; Zahnrad neben dem Titel: Einstellungen ein-/ausblenden
-$(IconBtn 'Gear' 84 14 32 '[!ToggleConfig "ObsidianTodo\Einstellungen" "Einstellungen.ini"]')
+$(IconBtn 'Gear' 84 14 32 '[!ToggleConfig "TaskBoard\Einstellungen" "Einstellungen.ini"]')
 [MeterHelp]
 Meter=String
 X=100
@@ -551,7 +551,7 @@ SolidColor=#ColorCheck#
 $ini = [regex]::Replace($ini, '(?m)^(\[(?!Rainmeter\]|Metadata\]|Variables\]|Measure|MeterBg\]|MeterTitle\]|MeterCount\]|MeterFold\]|MeterHelp\]|GearBtn\]|FoldBtn\])[^\]]+\]\r?\n)', '$1Group=List'+"`r`n")
 [IO.File]::WriteAllText("$skin\Todo.ini", $ini, [Text.Encoding]::Unicode)
 
-# ---------- Formular: eigene Config ObsidianTodo\Formular (neuer Punkt / bearbeiten), Logik in form.lua ----------
+# ---------- Formular: eigene Config TaskBoard\Formular (neuer Punkt / bearbeiten), Logik in form.lua ----------
 $fw = 560
 $chevL = [char]0xE76B; $chevR = [char]0xE76C
 function Act($call) { '[!CommandMeasure MeasureForm "' + $call + '"]' }
@@ -634,7 +634,7 @@ FontColor=#ColorText#
 FontFace=#FontFace#
 FontSize=#InSize#
 StringStyle=#InStyle#
-; bleibt beim Rausklicken offen, TodoHotkey.exe --commit uebernimmt dann den Text (form.lua openInput)
+; bleibt beim Rausklicken offen, TaskBoardHotkey.exe --commit uebernimmt dann den Text (form.lua openInput)
 FocusDismiss=0
 OnDismissAction=[!CommandMeasure MeasureForm "InputCancel()"]
 DefaultValue=#InText#
@@ -1089,7 +1089,7 @@ $form = $form.Replace("[BtnSave]`nMeter=String", "[BtnSave]`nMeter=String`nFontW
 New-Item -ItemType Directory -Force "$skin\Formular" | Out-Null
 [IO.File]::WriteAllText("$skin\Formular\Formular.ini", $form, [Text.Encoding]::Unicode)
 
-# ---------- Einstellungen-Fenster: Config ObsidianTodo\Einstellungen, geoeffnet ueber das Zahnrad ----------
+# ---------- Einstellungen-Fenster: Config TaskBoard\Einstellungen, geoeffnet ueber das Zahnrad ----------
 # Anzeige (Seitenleiste/Desktop/beides) und Breite schreiben in prefs.inc (bleibt bei Updates erhalten).
 # Darunter die Kurzhilfe: "#..." = Ueberschrift, sonst "Stichwort: Erklaerung" (Stichwort fett)
 $helpLines = @(
@@ -1105,7 +1105,7 @@ $helpLines = @(
     'Farben: orange = heute fällig, rot = überfällig'
     'Erledigte archivieren: abgehakte Einträge wandern ins Archiv'
 )
-# ---------- Einstellungen-Fenster: Config ObsidianTodo\Einstellungen, zwei Spalten ----------
+# ---------- Einstellungen-Fenster: Config TaskBoard\Einstellungen, zwei Spalten ----------
 $hw = 960                       # Fensterbreite
 $colL = 22; $colR = 500; $colW = 438
 $archive = '["obsidian://open?path=#ArchiveUrl#"]'
@@ -1217,7 +1217,7 @@ $selRing = '[!SetVariable S_{0} "255,255,255,230"][!SetVariable B_{0} "255,255,2
 # Wert in prefs.inc / colors.inc schreiben
 function P($k, $v) { "[!WriteKeyValue Variables $k `"$v`" `"#@#prefs.inc`"]" }
 function C($k, $v) { "[!WriteKeyValue Variables $k `"$v`" `"#@#colors.inc`"]" }
-$refAll = '[!Refresh ObsidianTodo][!Refresh ObsidianTodo\Rand][!Refresh ObsidianTodo\Formular][!Refresh]'
+$refAll = '[!Refresh TaskBoard][!Refresh TaskBoard\Rand][!Refresh TaskBoard\Formular][!Refresh]'
 # Eine Einstellung: Ueberschrift + Knoepfe in einer Reihe. Ein String-Measure vergleicht den aktuellen Wert
 # ($current) mit dem Muster jedes Knopfs und hebt den passenden hervor.
 # $opts: @( @(Beschriftung, Muster, Bangs [, Schriftfarbe, Schriftgroesse]), ... )
@@ -1283,20 +1283,20 @@ ColorCheck=138,108,245,255
 ColorHover=255,255,255,22
 @IncludeColors=#@#colors.inc
 
-; Tastenkuerzel neu setzen: TodoHotkey.exe beenden, die Liste startet es beim Auffrischen neu
+; Tastenkuerzel neu setzen: TaskBoardHotkey.exe beenden, die Liste startet es beim Auffrischen neu
 [MeasureKillHotkey]
 Measure=Plugin
 Plugin=RunCommand
 Program=taskkill.exe
-Parameter=/f /im TodoHotkey.exe
+Parameter=/f /im TaskBoardHotkey.exe
 State=Hide
-FinishAction=[!Refresh ObsidianTodo][!Delay 1500][!Refresh]
+FinishAction=[!Refresh TaskBoard][!Delay 1500][!Refresh]
 
-; neues Tastenkuerzel aufnehmen (kleines Fenster), danach TodoHotkey neu starten
+; neues Tastenkuerzel aufnehmen (kleines Fenster), danach TaskBoardHotkey neu starten
 [MeasureRecord]
 Measure=Plugin
 Plugin=RunCommand
-Program="#@#TodoHotkey.exe"
+Program="#@#TaskBoardHotkey.exe"
 Parameter=--record
 State=Hide
 Timeout=-1
@@ -1355,7 +1355,7 @@ Parameter=-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "#@#
 State=Hide
 OutputType=UTF8
 Timeout=-1
-FinishAction=[!Refresh ObsidianTodo][!Refresh ObsidianTodo\Formular][!Refresh]
+FinishAction=[!Refresh TaskBoard][!Refresh TaskBoard\Formular][!Refresh]
 
 [MeterBg]
 Meter=Shape
@@ -1458,7 +1458,7 @@ $hini += Row 'Remind' 'Erinnerungen' $colR '22R' '#RemindOn#-#RemindLead#' @(
     @('Pünktlich', '^1-0$', "$(P RemindOn 1)$(P RemindLead 0)$refAll"),
     @('Aus', '^0-', "$(P RemindOn 0)$refAll"))
 $kill = '[!CommandMeasure MeasureKillHotkey "Run"]'
-# Tastenkuerzel: aktuelles anzeigen, Klick darauf nimmt ein neues auf (TodoHotkey.exe --record), "Zuruecksetzen" = Standard
+# Tastenkuerzel: aktuelles anzeigen, Klick darauf nimmt ein neues auf (TaskBoardHotkey.exe --record), "Zuruecksetzen" = Standard
 $hini += Caption 'CapHotkey' 'Tastenkürzel für neuen Eintrag' $colR
 $hini += SetChip 'HotkeyNow1' $colR '10R' '#HotkeyNow#' '[!CommandMeasure MeasureRecord "Run"]' '#ColorText#' 11 190
 $hini += SetChip 'HotkeyReset' ($colR + 198) 'r' 'Zurücksetzen' "$(P Hotkey '')$kill"
@@ -1543,7 +1543,7 @@ $hini = $hini.Replace("ColorHover=255,255,255,22`r`n@IncludeColors", "ColorHover
 New-Item -ItemType Directory -Force "$skin\Einstellungen" | Out-Null
 [IO.File]::WriteAllText("$skin\Einstellungen\Einstellungen.ini", $hini, [Text.Encoding]::Unicode)
 
-# ---------- Rand-Streifen fuer die Seitenleiste: Config ObsidianTodo\Rand (Logik in sidebar.lua) ----------
+# ---------- Rand-Streifen fuer die Seitenleiste: Config TaskBoard\Rand (Logik in sidebar.lua) ----------
 $rand = @"
 ; Unsichtbarer Streifen am rechten Bildschirmrand: Maus dagegen -> Liste faehrt herein. Erzeugt von build-skin.ps1.
 [Rainmeter]

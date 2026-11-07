@@ -9,7 +9,7 @@ param([switch]$Check, [switch]$Now)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # sonst ist Invoke-WebRequest in PowerShell 5 extrem langsam
 $res = $PSScriptRoot
-$stateDir = Join-Path $env:LOCALAPPDATA 'ObsidianTodo'
+$stateDir = Join-Path $env:LOCALAPPDATA 'TaskBoard'
 $stamp = Join-Path $stateDir 'last-update-check.txt'
 $log = Join-Path $stateDir 'update.log'
 $manual = $Check -or $Now
