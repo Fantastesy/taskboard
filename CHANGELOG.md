@@ -1,6 +1,6 @@
 # Änderungen
 
-## Noch nicht veröffentlicht
+## 1.4.0 – 7. November 2026
 
 ### Windows und Linux (KDE)
 - **Neuer Name: Task Board** (früher „Obsidian Todo“). Setup, Programmliste, Startmenü („Task Board entfernen“), Einstellungen und Widget heißen jetzt so – auch alle Ordner und Einträge im System. Das Update zieht eine bestehende Installation automatisch um; Liste, Einstellungen, Position und Tastenkürzel bleiben erhalten. Unter Windows wird ein Programmordner „Obsidian Todo“ zu „Task Board“ am selben Ort. Die Setup-Dateien heißen `TaskBoard-Setup-<version>.exe` und `TaskBoard-KDE-Setup-<version>.sh`, das Projekt auf GitHub heißt `taskboard` (alte Links leiten weiter).
