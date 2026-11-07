@@ -5,7 +5,7 @@
 #   update.sh --now    von Hand ("Jetzt aktualisieren"): sofort installieren und Plasma neu starten (neue Version sofort sichtbar)
 # Gibt es ein neueres Release, wird TaskBoard-KDE-Setup-<version>.sh geladen, die SHA-256-Pruefsumme
 # verglichen und das Setup mit --silent ausgefuehrt. Einstellungen und Todo-Liste bleiben unveraendert.
-DIR="${XDG_DATA_HOME:-$HOME/.local/share}/obsidian-todo"
+DIR="${XDG_DATA_HOME:-$HOME/.local/share}/taskboard"
 STAMP="$DIR/last-update-check"
 LOG="$DIR/update.log"
 # Name mit oder ohne Versionsnummer: TaskBoard-KDE-Setup-1.4.0.sh, bis 1.3.0 ObsidianTodo-KDE-Setup-1.3.0.sh (beide gleich)

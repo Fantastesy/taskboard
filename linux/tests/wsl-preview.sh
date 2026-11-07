@@ -3,10 +3,10 @@
 # das Bild wird auf ein Hintergrundbild gelegt - so wie es auf dem KDE-Desktop aussieht.
 #   $1 Hintergrundbild (optional), Ergebnis: linux/tests/preview.png
 U=tester; H=/home/$U
-OUT=/mnt/h/Projekte/obsidian-todo/linux/tests/preview.png
+OUT=/mnt/h/Projekte/taskboard/linux/tests/preview.png
 rm -f $H/grab.png "$OUT"
 cat > $H/grab-inner.sh <<'IN'
-OBSIDIAN_TODO_TEST=grab plasmawindowed io.github.fantastesy.obsidiantodo > $HOME/widget.log 2>&1 &
+TASKBOARD_TEST=grab plasmawindowed io.github.fantastesy.taskboard > $HOME/widget.log 2>&1 &
 sleep 8
 kill $!
 IN

@@ -8,7 +8,7 @@
 set -u
 export MSYS_NO_PATHCONV=1
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-setup="${1:-$(ls "$root"/dist/ObsidianTodo-KDE-Setup-*.sh | tail -1)}"
+setup="${1:-$(ls "$root"/dist/TaskBoard-KDE-Setup-*.sh | tail -1)}"
 prefix="${2:-kde}"
 out="$root/linux/tests"
 c=obsidian-todo-kde
@@ -40,11 +40,11 @@ shot() { [ -n "${NOSHOT:-}" ] && return; docker exec $c insession bash -c "spect
 cpu() { docker exec $c bash -c 'p=$(pgrep -x plasmashell | head -1); a=$(awk "{print $14+$15}" /proc/$p/stat); sleep 3; b=$(awk "{print $14+$15}" /proc/$p/stat); echo $(( (b-a) * 100 / 300 ))'; }
 
 echo "== Setup: $(basename "$setup")"
-docker exec $c insession bash -c "cd ~ && cp '/setup/$(basename "$setup")' setup.sh && printf 'n\n\n\np\n' | OBSIDIAN_TODO_NO_GUI=1 bash ./setup.sh >/tmp/setup.out 2>&1; echo exit=\$?; tail -3 /tmp/obsidian-todo-setup.log"
+docker exec $c insession bash -c "cd ~ && cp '/setup/$(basename "$setup")' setup.sh && printf 'n\n\n\np\n' | TASKBOARD_NO_GUI=1 bash ./setup.sh >/tmp/setup.out 2>&1; echo exit=\$?; tail -3 /tmp/taskboard-setup.log"
 sleep 4; shot 1-eingeblendet
 echo "== CPU plasmashell (sollte niedrig sein): $(cpu) %"
 sleep 14; shot 2-danach
 echo "== CPU plasmashell: $(cpu) %"
 echo "== Leisten:"
-docker exec $c insession bash -c 'f=~/.config/plasma-org.kde.plasma.desktop-appletsrc; awk "/^\[Containments\]\[[0-9]+\]\$/{c=\$0} /^(plugin|location|formfactor)=/{print c, \$0}" $f | grep -B2 -A0 obsidiantodo'
+docker exec $c insession bash -c 'f=~/.config/plasma-org.kde.plasma.desktop-appletsrc; awk "/^\[Containments\]\[[0-9]+\]\$/{c=\$0} /^(plugin|location|formfactor)=/{print c, \$0}" $f | grep -B2 -A0 taskboard'
 echo "Fertig. Container laeuft weiter ($c, http://localhost:3010); entfernen: docker rm -f $c"

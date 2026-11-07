@@ -1,6 +1,6 @@
 // Task Board (frueher Obsidian Todo) - KDE-Plasma-Widget.
 // Liest/schreibt die Todo.md ueber kleine Shell-Befehle (cat/base64/mv), weil QML selbst keine Dateien schreiben kann.
-// Pfade kommen aus ~/.config/obsidian-todo/config (schreibt das Setup).
+// Pfade kommen aus ~/.config/taskboard/config (schreibt das Setup).
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
@@ -121,7 +121,7 @@ PlasmoidItem {
     // ---------- Rechtsklick-Menue ----------
     function runSetup(args) {
         // abgekoppelt starten: beim Umschalten wird dieses Widget selbst entfernt
-        run('s="${XDG_DATA_HOME:-$HOME/.local/share}/obsidian-todo/setup.sh"; [ -f "$s" ] && setsid bash "$s" ' + args + ' >/dev/null 2>&1 < /dev/null &');
+        run('s="${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/setup.sh"; [ -f "$s" ] && setsid bash "$s" ' + args + ' >/dev/null 2>&1 < /dev/null &');
     }
     Plasmoid.contextualActions: [
         PlasmaCore.Action { text: "Neuer Eintrag"; icon.name: "list-add"; onTriggered: root.openForm(null) },
@@ -200,7 +200,7 @@ PlasmoidItem {
             + 'while [ "$p" != "/" ] && [ -n "$p" ]; do [ -d "$p/.obsidian" ] && { v="$p"; break; }; p=$(dirname "$p"); done; '
             + 'mkdir -p "$d"; [ -f "$f" ] || printf "# Todo\\n\\n- [ ] Mein erster Eintrag\\n" > "$f"; '
             + '[ -f "$a" ] || printf "# Todo-Archiv\\n" > "$a"; '
-            + 'c="$HOME/.config/obsidian-todo/config"; mkdir -p "$(dirname "$c")"; touch "$c"; '
+            + 'c="$HOME/.config/taskboard/config"; mkdir -p "$(dirname "$c")"; touch "$c"; '
             + 'grep -v -E "^(VAULT|VAULT_NAME|TODO_FILE|ARCHIVE_FILE)=" "$c" > "$c.tmp"; '
             + 'printf "VAULT=%s\\nVAULT_NAME=%s\\nTODO_FILE=%s\\nARCHIVE_FILE=%s\\n" "$v" "$(basename "$v")" "$f" "$a" >> "$c.tmp" && mv -f "$c.tmp" "$c"',
             function () { lastContent = ""; model = null; loadConfig(); });
@@ -241,14 +241,14 @@ PlasmoidItem {
         });
     }
     function writeFile(path, content, cb) {
-        var tmp = path + ".obsidian-todo.tmp";
+        var tmp = path + ".taskboard.tmp";
         run('printf %s ' + q(Core.toBase64(content)) + ' | base64 -d > ' + q(tmp) + ' && mv -f ' + q(tmp) + ' ' + q(path),
             function (code) { cb(code === 0); });
     }
 
     // ---------- Einstellungen laden ----------
     function loadConfig() {
-        run('printf "HOME=%s\\n" "$HOME"; cat "$HOME/.config/obsidian-todo/config" 2>/dev/null; command -v notify-send >/dev/null && echo NOTIFY=1; printf "TEST=%s\\n" "$OBSIDIAN_TODO_TEST"; [ -f /tmp/obsidian-todo-test.enable ] && echo TESTCMD=1; printf "APPVERSION=%s\\n" "$(head -n1 "${XDG_DATA_HOME:-$HOME/.local/share}/obsidian-todo/version.txt" 2>/dev/null)"',
+        run('printf "HOME=%s\\n" "$HOME"; cat "$HOME/.config/taskboard/config" 2>/dev/null; command -v notify-send >/dev/null && echo NOTIFY=1; printf "TEST=%s\\n" "$TASKBOARD_TEST"; [ -f /tmp/taskboard-test.enable ] && echo TESTCMD=1; printf "APPVERSION=%s\\n" "$(head -n1 "${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/version.txt" 2>/dev/null)"',
             function (code, out) {
                 var cfg = {};
                 out.split("\n").forEach(function (l) {
@@ -263,7 +263,7 @@ PlasmoidItem {
                 version = cfg.APPVERSION || "";
                 configMissing = todoFile === "";
                 refresh();
-                // nur fuer automatische Tests: OBSIDIAN_TODO_TEST=new|edit oeffnet das Formular
+                // nur fuer automatische Tests: TASKBOARD_TEST=new|edit oeffnet das Formular
                 if (cfg.TEST) testTimer.mode = cfg.TEST;
                 testCmds = cfg.TESTCMD === "1";
             });
@@ -386,7 +386,7 @@ PlasmoidItem {
     property string updateVersion: ""
     function checkForUpdates() {
         updateState = "checking";
-        run('u="${XDG_DATA_HOME:-$HOME/.local/share}/obsidian-todo/update.sh"; [ -f "$u" ] && sh "$u" --check 2>/dev/null || echo fehler', function (code, out) {
+        run('u="${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/update.sh"; [ -f "$u" ] && sh "$u" --check 2>/dev/null || echo fehler', function (code, out) {
             var m = /^(neu|aktuell) (\S+)/m.exec(out);
             if (!m) { updateState = "error"; return; }
             updateVersion = m[2];
@@ -396,7 +396,7 @@ PlasmoidItem {
     // jetzt installieren: laeuft ausserhalb von Plasma weiter (Plasma wird am Ende neu gestartet und laedt die neue Version)
     function installUpdate() {
         updateState = "installing";
-        run('u="${XDG_DATA_HOME:-$HOME/.local/share}/obsidian-todo/update.sh"; '
+        run('u="${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/update.sh"; '
             + 'if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --quiet --collect sh "$u" --now >/dev/null 2>&1; then :; '
             + 'else setsid sh "$u" --now >/dev/null 2>&1 < /dev/null & fi');
     }
@@ -589,7 +589,7 @@ PlasmoidItem {
     // ---------- Automatische Updates (update.sh prueft selbst hoechstens alle 6 Stunden) ----------
     function checkUpdate() {
         if (!Plasmoid.configuration.autoUpdate) return;
-        run('u="$HOME/.local/share/obsidian-todo/update.sh"; [ -x "$u" ] && "$u" >/dev/null 2>&1; true');
+        run('u="$HOME/.local/share/taskboard/update.sh"; [ -x "$u" ] && "$u" >/dev/null 2>&1; true');
     }
     Timer {
         interval: 6 * 3600 * 1000; running: true; repeat: true
@@ -613,13 +613,13 @@ PlasmoidItem {
         }
     }
 
-    // nur fuer automatische Tests (eingeschaltet, wenn beim Start /tmp/obsidian-todo-test.enable existiert):
+    // nur fuer automatische Tests (eingeschaltet, wenn beim Start /tmp/taskboard-test.enable existiert):
     property bool testCmds: false
-    // nur fuer automatische Tests: Befehle aus /tmp/obsidian-todo-test.cmd (Datei wird danach geloescht)
+    // nur fuer automatische Tests: Befehle aus /tmp/taskboard-test.cmd (Datei wird danach geloescht)
     // show | hide | settings | reveal | edge | mode=<sidebar|desktop|both> | side=<left|right>
     Timer {
         interval: 1500; running: root.testCmds; repeat: true
-        onTriggered: root.run('f=/tmp/obsidian-todo-test.cmd; [ -f "$f" ] && { cat "$f"; rm -f "$f"; }; true', function (code, out) {
+        onTriggered: root.run('f=/tmp/taskboard-test.cmd; [ -f "$f" ] && { cat "$f"; rm -f "$f"; }; true', function (code, out) {
             out.split("\n").forEach(function (c) {
                 c = c.trim();
                 if (c === "show") side.show();
@@ -636,11 +636,11 @@ PlasmoidItem {
                 else if (c === "editform") root.openForm(root.rows[0]);
                 else if (c === "closeform") form.visible = false;
                 else if (c === "formcal") form.calOpen = !form.calOpen;
-                else if (c === "formshot") form.contentItem.grabToImage(function (r) { r.saveToFile("/tmp/obsidian-todo-form.png"); });
+                else if (c === "formshot") form.contentItem.grabToImage(function (r) { r.saveToFile("/tmp/taskboard-form.png"); });
                 else if (c.indexOf("grab=") === 0) {
                     var gn = c.substring(5);
                     var gi = gn === "form" ? form.contentItem : gn === "settings" ? settings.contentItem : gn === "panel" ? side.panelItem : root.fullRepresentationItem;
-                    if (gi) gi.grabToImage(function (r) { r.saveToFile("/tmp/obsidian-todo-" + gn + ".png"); });
+                    if (gi) gi.grabToImage(function (r) { r.saveToFile("/tmp/taskboard-" + gn + ".png"); });
                 }
                 else if (c.indexOf("formfill=") === 0) form.testFill(c.substring(9));
                 // move=2,0: Zeile 2 an die Stelle von Zeile 0 ziehen (wie mit der Maus)
@@ -652,10 +652,10 @@ PlasmoidItem {
                 else if (c === "updcheck") root.checkForUpdates();
                 else if (c === "updnow") root.installUpdate();
                 else if (c === "migrate") { Plasmoid.configuration.manualOrder = false; root.migrateOrder(); }
-                else if (c === "updstate") root.run('printf %s ' + root.q("update=" + root.updateState + " " + root.updateVersion + " order=" + Plasmoid.configuration.manualOrder) + ' > /tmp/obsidian-todo-test.out');
+                else if (c === "updstate") root.run('printf %s ' + root.q("update=" + root.updateState + " " + root.updateVersion + " order=" + Plasmoid.configuration.manualOrder) + ' > /tmp/taskboard-test.out');
                 else if (c.indexOf("choose=") === 0) root.chooseTodo(c.substring(7));
-                else if (c === "todo") root.run('{ echo "datei=' + root.todoFile + '"; cat ' + root.q(root.todoFile) + '; } > /tmp/obsidian-todo-test.out');
-                else if (c === "formsize") root.run('printf %s ' + root.q("window=" + form.width + "x" + form.height + " inhalt=" + form.wantW + "x" + form.wantH) + ' > /tmp/obsidian-todo-test.out');
+                else if (c === "todo") root.run('{ echo "datei=' + root.todoFile + '"; cat ' + root.q(root.todoFile) + '; } > /tmp/taskboard-test.out');
+                else if (c === "formsize") root.run('printf %s ' + root.q("window=" + form.width + "x" + form.height + " inhalt=" + form.wantW + "x" + form.wantH) + ' > /tmp/taskboard-test.out');
                 else if (c === "notes") root.toggleNotes(root.rows[0].key);
                 else if (c === "settings") root.openSettings();
                 else if (c === "closesettings") settings.visible = false;
@@ -664,11 +664,11 @@ PlasmoidItem {
                 else if (c.indexOf("side=") === 0) Plasmoid.configuration.side = c.substring(5);
                 else if (c.indexOf("accent=") === 0) Plasmoid.configuration.accent = c.substring(7);
                 else if (c.indexOf("hotkey=") === 0) root.setHotkey(c.substring(7));
-                else if (c === "settingsmove") { settings.x = settings.x - 200; settings.y = settings.y - 100; root.run("printf %s " + root.q("settings " + settings.x + "," + settings.y) + " > /tmp/obsidian-todo-test.out"); }
-                else if (c === "deskinfo") { var d2 = root.fullRepresentationItem.children[0]; var bx = d2.deskContainer(); root.run("printf %s " + root.q(bx ? "halter " + bx.width + "x" + bx.height + " liste " + d2.implicitWidth + "x" + d2.implicitHeight : "kein Halter") + " > /tmp/obsidian-todo-test.out"); }
-                else if (c === "desksize") { var d3 = root.fullRepresentationItem.children[0]; var b3 = d3.deskContainer(); b3.height = d3.implicitHeight; root.run("printf %s " + root.q("halter jetzt " + b3.width + "x" + b3.height) + " > /tmp/obsidian-todo-test.out"); }
-                else if (c === "direct" || c === "undirect") { var dv = root.fullRepresentationItem.children[0]; dv.setDirectMove(c === "direct"); root.run("printf %s " + root.q(dv.box ? "bedingung=" + dv.box.editModeCondition : "kein Halter") + " > /tmp/obsidian-todo-test.out"); }
-                else if (c === "status") root.run('printf %s ' + root.q("shown=" + side.shown + " mode=" + root.mode + " hotkey=" + root.hotkey + " version=" + root.version) + ' > /tmp/obsidian-todo-test.out');
+                else if (c === "settingsmove") { settings.x = settings.x - 200; settings.y = settings.y - 100; root.run("printf %s " + root.q("settings " + settings.x + "," + settings.y) + " > /tmp/taskboard-test.out"); }
+                else if (c === "deskinfo") { var d2 = root.fullRepresentationItem.children[0]; var bx = d2.deskContainer(); root.run("printf %s " + root.q(bx ? "halter " + bx.width + "x" + bx.height + " liste " + d2.implicitWidth + "x" + d2.implicitHeight : "kein Halter") + " > /tmp/taskboard-test.out"); }
+                else if (c === "desksize") { var d3 = root.fullRepresentationItem.children[0]; var b3 = d3.deskContainer(); b3.height = d3.implicitHeight; root.run("printf %s " + root.q("halter jetzt " + b3.width + "x" + b3.height) + " > /tmp/taskboard-test.out"); }
+                else if (c === "direct" || c === "undirect") { var dv = root.fullRepresentationItem.children[0]; dv.setDirectMove(c === "direct"); root.run("printf %s " + root.q(dv.box ? "bedingung=" + dv.box.editModeCondition : "kein Halter") + " > /tmp/taskboard-test.out"); }
+                else if (c === "status") root.run('printf %s ' + root.q("shown=" + side.shown + " mode=" + root.mode + " hotkey=" + root.hotkey + " version=" + root.version) + ' > /tmp/taskboard-test.out');
             });
         })
     }

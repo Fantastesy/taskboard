@@ -11,9 +11,9 @@ out="$root/linux/tests"
 c=obsidian-todo-kde
 case "${1:-update}" in
 cmd)
-    docker exec $c bash -c "printf '%s\n' '$2' > /tmp/obsidian-todo-test.cmd; chown abc /tmp/obsidian-todo-test.cmd"
+    docker exec $c bash -c "printf '%s\n' '$2' > /tmp/taskboard-test.cmd; chown abc /tmp/taskboard-test.cmd"
     sleep "${3:-3}"
-    docker exec $c cat /tmp/obsidian-todo-test.out 2>/dev/null && echo
+    docker exec $c cat /tmp/taskboard-test.out 2>/dev/null && echo
     ;;
 shot)
     docker exec $c insession bash -c "spectacle -b -n -f -o /tmp/$2.png; sleep 2"
@@ -30,9 +30,9 @@ update)
     docker cp "$(cd "$tmp" && (pwd -W 2>/dev/null || pwd))/package" $c:/tmp/pkg >/dev/null
     rm -rf "$tmp"
     docker exec $c bash -c 'chown -R abc /tmp/pkg'
-    docker exec $c insession bash -c 'd=$HOME/.local/share/plasma/plasmoids/io.github.fantastesy.obsidiantodo
+    docker exec $c insession bash -c 'd=$HOME/.local/share/plasma/plasmoids/io.github.fantastesy.taskboard
         if command -v kpackagetool6 >/dev/null; then kpackagetool6 -t Plasma/Applet -u /tmp/pkg >/dev/null 2>&1; else rm -rf "$d" && cp -r /tmp/pkg "$d"; fi && echo "Widget aktualisiert"
-        touch /tmp/obsidian-todo-test.enable; pkill -x plasmashell; sleep 2
+        touch /tmp/taskboard-test.enable; pkill -x plasmashell; sleep 2
         (setsid plasmashell > /tmp/plasma.log 2>&1 &) ; sleep 12; pgrep -x plasmashell >/dev/null && echo "Plasma laeuft"'
     ;;
 esac

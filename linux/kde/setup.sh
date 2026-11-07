@@ -13,13 +13,13 @@
 set -u
 
 APP="Task Board"
-PLUGIN_ID="io.github.fantastesy.obsidiantodo"
+PLUGIN_ID="io.github.fantastesy.taskboard"
 SHORTCUT="Meta+Shift+T"
-CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/obsidian-todo"
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/taskboard"
 CONF="$CONF_DIR/config"
-DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/obsidian-todo"
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/taskboard"
 PLASMOID_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/plasma/plasmoids/$PLUGIN_ID"
-LOG="${TMPDIR:-/tmp}/obsidian-todo-setup.log"
+LOG="${TMPDIR:-/tmp}/taskboard-setup.log"
 SILENT=0
 UNINSTALL=0
 YES=0
@@ -35,12 +35,116 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-MENU_ENTRY="${XDG_DATA_HOME:-$HOME/.local/share}/applications/obsidian-todo-uninstall.desktop"
+MENU_ENTRY="${XDG_DATA_HOME:-$HOME/.local/share}/applications/taskboard-uninstall.desktop"
+# Namen bis 1.3.0 (Obsidian Todo) - werden beim Setup/Update umgezogen (migrate_files, migrate_widget)
+OLD_ID="io.github.fantastesy.obsidiantodo"
+OLD_CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/obsidian-todo"
+OLD_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/obsidian-todo"
+OLD_PLASMOID_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/plasma/plasmoids/$OLD_ID"
+OLD_MENU_ENTRY="${XDG_DATA_HOME:-$HOME/.local/share}/applications/obsidian-todo-uninstall.desktop"
 
 log() { printf '%s %s\n' "$(date +%FT%T)" "$*" >> "$LOG"; }
 
+# ---------- Umzug von Obsidian Todo (bis 1.3.0) ----------
+# Ordner: Einrichtung (config) und Update-Dateien unter neuem Namen weiterverwenden
+migrate_files() {
+    if [ -d "$OLD_CONF_DIR" ]; then
+        if [ ! -f "$CONF_DIR/config" ]; then
+            mkdir -p "$(dirname "$CONF_DIR")" && rm -rf "$CONF_DIR" && mv "$OLD_CONF_DIR" "$CONF_DIR" && log "Umzug: $OLD_CONF_DIR -> $CONF_DIR"
+        else
+            rm -rf "$OLD_CONF_DIR"
+        fi
+    fi
+    if [ -d "$OLD_DATA_DIR" ]; then
+        mkdir -p "$DATA_DIR"
+        for f in last-update-check update.log; do
+            [ -f "$OLD_DATA_DIR/$f" ] && [ ! -f "$DATA_DIR/$f" ] && cp "$OLD_DATA_DIR/$f" "$DATA_DIR/$f"
+        done
+        rm -rf "$OLD_DATA_DIR" && log "Umzug: $OLD_DATA_DIR entfernt"
+    fi
+    rm -f "$OLD_MENU_ENTRY" "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/obsidian-todo-update.desktop"
+}
+# Widget: altes Widget (alte ID) gegen ein neues mit neuer ID tauschen - an derselben Stelle, mit allen Einstellungen
+# und dem Tastenkuerzel. Zwei Schritte: (1) alles auslesen, in einer Datei sichern, altes Widget entfernen;
+# (2) ein paar Sekunden spaeter das neue anlegen. In einem Schritt ordnet Plasma 6.6 das neue Widget danach neu an
+# und verschiebt es (Test 07.11.2026); nachtraegliches Setzen von geometry ignoriert Plasma ganz.
+# Bricht Schritt 2 ab, holt das naechste Setup ihn aus der Datei nach. Das alte Paket wird erst danach geloescht.
+MIGRATE_FILE="$CONF_DIR/widget-umzug.json"
+migrate_widget() {
+    [ -d "$OLD_PLASMOID_DIR" ] || [ -f "$MIGRATE_FILE" ] || return 0
+    local out json
+    if [ ! -f "$MIGRATE_FILE" ]; then
+        out="$(plasma_query "
+var oldId = '$OLD_ID', list = [];
+function readAll(w, path, depth, res) {
+    w.currentConfigGroup = path;
+    var keys = w.configKeys, groups = w.configGroups;
+    keys.forEach(function (k) { res.push([path, k, String(w.readConfig(k, ''))]); });
+    if (depth < 3) groups.forEach(function (g) { readAll(w, path.concat([g]), depth + 1, res); });
+    return res;
+}
+var ds = desktops();
+for (var i = 0; i < ds.length; i++) {
+    ds[i].widgets(oldId).forEach(function (w) {
+        var g = w.geometry;
+        list.push({ desk: i, x: g.x, y: g.y, w: g.width, h: g.height, sc: String(w.globalShortcut || ''), conf: readAll(w, [], 0, []) });
+    });
+}
+// ganz alte Versionen (bis 1.1): eigene Leiste am Rand
+var panel = false;
+panels().forEach(function (p) { if (p.widgets(oldId).length) panel = true; });
+print('MIGRATE=' + JSON.stringify({ list: list, panel: panel }) + '#ENDE');")"
+        json="$(printf '%s' "$out" | tr -d '\n' | grep -o 'MIGRATE=.*#ENDE' | sed 's/^MIGRATE=//; s/#ENDE$//')"
+        [ -n "$json" ] || { log "Umzug: Widget nicht auslesbar (Plasma nicht erreichbar) - naechstes Mal"; return 1; }
+        mkdir -p "$CONF_DIR"; printf '%s\n' "$json" > "$MIGRATE_FILE"
+        plasma_script "
+var oldId = '$OLD_ID';
+desktops().forEach(function (d) { d.widgets(oldId).forEach(function (w) { w.globalShortcut = ''; w.remove(); }); });
+panels().forEach(function (p) {
+    var ours = p.widgets(oldId);
+    if (!ours.length) return;
+    var others = p.widgets().length - ours.length;
+    ours.forEach(function (x) { x.remove(); });
+    if (others === 0) p.remove();
+});" || { log "Umzug: altes Widget nicht entfernbar"; rm -f "$MIGRATE_FILE"; return 1; }
+        sleep 3
+    fi
+    json="$(cat "$MIGRATE_FILE")"
+    plasma_script "
+var data = $json, newId = '$PLUGIN_ID', oldId = '$OLD_ID', ds = desktops();
+data.list.forEach(function (m) {
+    var d = ds[m.desk] || ds[0];
+    // Position beim Anlegen mitgeben
+    var n = d.addWidget(newId, m.x, m.y, m.w, m.h);
+    if (!n) n = d.addWidget(oldId, m.x, m.y, m.w, m.h);   // neues Paket nicht ladbar: altes zuruecksetzen
+    if (!n) return;
+    m.conf.forEach(function (c) { n.currentConfigGroup = c[0]; n.writeConfig(c[1], c[2]); });
+    n.currentConfigGroup = ['General'];
+    if (m.sc) n.globalShortcut = m.sc;
+    n.reloadConfig();
+});
+var have = false;
+ds.forEach(function (d) { if (d.widgets(newId).length || d.widgets(oldId).length) have = true; });
+if (data.panel && !have) {
+    var d = ds[0];
+    for (var i = 0; i < ds.length; i++) if (ds[i].screen === 0) d = ds[i];
+    var g = screenGeometry(d.screen);
+    var w = d.addWidget(newId, g.width - 520, 60, 480, 560);
+    w.globalShortcut = '$SHORTCUT';
+    w.currentConfigGroup = ['General'];
+    w.writeConfig('mode', 'sidebar');
+}" || { log "Umzug: neues Widget nicht angelegt (Plasma nicht erreichbar) - naechstes Mal aus $MIGRATE_FILE"; return 1; }
+    rm -f "$MIGRATE_FILE"
+    # altes Paket nur loeschen, wenn wirklich kein altes Widget mehr da ist
+    out="$(plasma_query "var n = 0; desktops().forEach(function (d) { n += d.widgets('$OLD_ID').length; }); print('LEFT=' + n);")"
+    case "$out" in *LEFT=0*) ;; *) log "Umzug: altes Widget noch da ($out) - altes Paket bleibt"; return 1 ;; esac
+    if command -v kpackagetool6 >/dev/null 2>&1; then kpackagetool6 -t Plasma/Applet -r "$OLD_ID" >>"$LOG" 2>&1 || rm -rf "$OLD_PLASMOID_DIR"
+    else rm -rf "$OLD_PLASMOID_DIR"; fi
+    log "Umzug: Widget $OLD_ID -> $PLUGIN_ID"
+}
+
 # ---------- Dialoge (kdialog, sonst Terminal) ----------
-HAVE_KDIALOG=0; command -v kdialog >/dev/null 2>&1 && [ -z "${OBSIDIAN_TODO_NO_GUI:-}" ] && HAVE_KDIALOG=1
+HAVE_KDIALOG=0; command -v kdialog >/dev/null 2>&1 && [ -z "${TASKBOARD_NO_GUI:-}" ] && HAVE_KDIALOG=1
 info() {
     log "INFO $1"
     [ "$SILENT" = 1 ] && return
@@ -75,8 +179,8 @@ download() {    # $1 URL, $2 Ziel
     else return 1; fi
 }
 fetch() {       # $1 URL -> stdout
-    if command -v curl >/dev/null 2>&1; then curl -fsSL -H "User-Agent: ObsidianTodo-Setup" "$1"
-    else wget -q -O - --header="User-Agent: ObsidianTodo-Setup" "$1"; fi
+    if command -v curl >/dev/null 2>&1; then curl -fsSL -H "User-Agent: TaskBoard-Setup" "$1"
+    else wget -q -O - --header="User-Agent: TaskBoard-Setup" "$1"; fi
 }
 # Plasma-Skript ueber D-Bus ausfuehren (qdbus6, qdbus oder gdbus - je nach Distribution)
 plasma_script() {
@@ -91,6 +195,17 @@ plasma_script() {
             --method org.kde.PlasmaShell.evaluateScript "$s" >/dev/null 2>&1 && return 0
     fi
     return 1
+}
+# wie plasma_script, gibt aber die Ausgabe (print) des Skripts zurueck
+plasma_query() {
+    local s="$1"
+    for q in qdbus6 qdbus-qt6 qdbus; do
+        if command -v "$q" >/dev/null 2>&1; then
+            "$q" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$s" 2>/dev/null && return 0
+        fi
+    done
+    command -v gdbus >/dev/null 2>&1 && gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
+        --method org.kde.PlasmaShell.evaluateScript "$s" 2>/dev/null
 }
 
 # ---------- Widget-Paket finden (Anhang dieses Skripts oder Entwicklerordner) ----------
@@ -130,9 +245,8 @@ if (!(onlyMigrate && !hadPanel)) {
     if (!w) {
         var d = desktops()[0];
         for (var i = 0; i < desktops().length; i++) if (desktops()[i].screen === 0) d = desktops()[i];
-        w = d.addWidget(id);
         var g = screenGeometry(d.screen);
-        w.geometry = new QRectF(g.width - 520, 60, 480, 560);
+        w = d.addWidget(id, g.width - 520, 60, 480, 560);   // Position beim Anlegen (geometry setzen wirkt nicht)
         w.globalShortcut = '$SHORTCUT';
     }
     w.currentConfigGroup = ['General'];
@@ -144,6 +258,9 @@ set_conf() {   # $1 Schluessel, $2 Wert
     if grep -q "^$1=" "$CONF"; then sed -i "s|^$1=.*|$1=$2|" "$CONF"; else printf '%s=%s\n' "$1" "$2" >> "$CONF"; fi
 }
 
+# Ordner von Obsidian Todo (bis 1.3.0) uebernehmen - vor allem anderen, damit die gespeicherte Einrichtung gefunden wird
+migrate_files
+
 # ---------- Deinstallieren ----------
 if [ "$UNINSTALL" = 1 ]; then
     if [ "$YES" = 0 ] && [ "$SILENT" = 0 ]; then
@@ -152,18 +269,20 @@ if [ "$UNINSTALL" = 1 ]; then
 Deine Todo.md und das Archiv bleiben erhalten." || exit 0
     fi
     plasma_script "
-var id = '$PLUGIN_ID';
-panels().forEach(function (p) {
-    var ours = p.widgets(id);
-    if (!ours.length) return;
-    var others = p.widgets().length - ours.length;
-    ours.forEach(function (w) { w.remove(); });
-    if (others === 0) p.remove();
-});
-desktops().forEach(function (d) { d.widgets(id).forEach(function (w) { w.remove(); }); });"
+['$PLUGIN_ID', '$OLD_ID'].forEach(function (id) {
+    panels().forEach(function (p) {
+        var ours = p.widgets(id);
+        if (!ours.length) return;
+        var others = p.widgets().length - ours.length;
+        ours.forEach(function (w) { w.remove(); });
+        if (others === 0) p.remove();
+    });
+    desktops().forEach(function (d) { d.widgets(id).forEach(function (w) { w.remove(); }); });
+});"
     kpackagetool6 -t Plasma/Applet -r "$PLUGIN_ID" >/dev/null 2>&1 || rm -rf "$PLASMOID_DIR"
+    kpackagetool6 -t Plasma/Applet -r "$OLD_ID" >/dev/null 2>&1 || rm -rf "$OLD_PLASMOID_DIR"
     rm -rf "$DATA_DIR" "$CONF_DIR"
-    rm -f "$MENU_ENTRY" "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/obsidian-todo-update.desktop"
+    rm -f "$MENU_ENTRY" "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/taskboard-update.desktop"
     info "$APP wurde entfernt. Deine Todo.md und das Archiv sind noch da."
     exit 0
 fi
@@ -399,7 +518,6 @@ else
     rm -rf "$PLASMOID_DIR" && mkdir -p "$(dirname "$PLASMOID_DIR")" && cp -r "$PKG" "$PLASMOID_DIR" \
         || fail "Widget konnte nicht installiert werden (Details: $LOG)."
 fi
-
 # Updates
 mkdir -p "$DATA_DIR"
 cp "$UPD" "$DATA_DIR/update.sh"; chmod +x "$DATA_DIR/update.sh"
@@ -409,7 +527,7 @@ printf '%s\n' "$REPO" > "$DATA_DIR/repo.txt"
 [ "$SELF" != "$DATA_DIR/setup.sh" ] && cp "$SELF" "$DATA_DIR/setup.sh"
 chmod +x "$DATA_DIR/setup.sh"
 
-# Startmenue: "Task Board entfernen" (Dateiname bleibt, damit Updates den alten Eintrag ersetzen)
+# Startmenue: "Task Board entfernen" (der alte Eintrag "Obsidian To-do entfernen" fliegt in migrate_files raus)
 mkdir -p "$(dirname "$MENU_ENTRY")"
 cat > "$MENU_ENTRY" <<EOF
 [Desktop Entry]
@@ -422,6 +540,10 @@ Terminal=false
 Categories=Utility;
 EOF
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$(dirname "$MENU_ENTRY")" >/dev/null 2>&1
+
+# altes Obsidian-Todo-Widget gegen das neue austauschen (Platz, Einstellungen und Kuerzel bleiben).
+# Erst hier, damit das neue Widget beim Start schon version.txt usw. vorfindet.
+migrate_widget || true
 
 # ---------- Anzeige einrichten (beim Update bleibt alles, wie es ist) ----------
 if [ "$SILENT" = 0 ]; then

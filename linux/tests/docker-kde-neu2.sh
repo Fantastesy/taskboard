@@ -8,11 +8,11 @@ c=obsidian-todo-kde; n="pkg$(date +%s)"
 tmp="$(mktemp -d)"; cp -r "$root/linux/kde/package" "$tmp/$n"; find "$tmp" -type f -exec sed -i 's/\r$//' {} +
 docker cp "$(cd "$tmp" && (pwd -W 2>/dev/null || pwd))/$n" $c:/tmp/$n >/dev/null
 docker cp "$(cd "$root/linux/kde" && (pwd -W 2>/dev/null || pwd))/update.sh" $c:/tmp/update-neu.sh >/dev/null
-docker exec $c bash -c "cp -r /tmp/$n/. /config/.local/share/plasma/plasmoids/io.github.fantastesy.obsidiantodo/; sed 's/\r$//' /tmp/update-neu.sh > /config/.local/share/obsidian-todo/update.sh; chmod +x /config/.local/share/obsidian-todo/update.sh; chown -R abc /config/.local"
-cmd() { docker exec $c bash -c "rm -f /tmp/obsidian-todo-test.out; printf '%s\n' '$1' > /tmp/obsidian-todo-test.cmd; chown abc /tmp/obsidian-todo-test.cmd"; sleep "${2:-3}"; }
-res() { docker exec $c cat /tmp/obsidian-todo-test.out 2>/dev/null; echo; }
-todo() { docker exec $c bash -c 'f="$(grep ^TODO_FILE= /config/.config/obsidian-todo/config | cut -d= -f2-)"; grep -n "\- \[" "$f"'; }
-docker exec $c bash -c 'f="$(grep ^TODO_FILE= /config/.config/obsidian-todo/config | cut -d= -f2-)"; cat > "$f" <<EOT
+docker exec $c bash -c "cp -r /tmp/$n/. /config/.local/share/plasma/plasmoids/io.github.fantastesy.taskboard/; sed 's/\r$//' /tmp/update-neu.sh > /config/.local/share/taskboard/update.sh; chmod +x /config/.local/share/taskboard/update.sh; chown -R abc /config/.local"
+cmd() { docker exec $c bash -c "rm -f /tmp/taskboard-test.out; printf '%s\n' '$1' > /tmp/taskboard-test.cmd; chown abc /tmp/taskboard-test.cmd"; sleep "${2:-3}"; }
+res() { docker exec $c cat /tmp/taskboard-test.out 2>/dev/null; echo; }
+todo() { docker exec $c bash -c 'f="$(grep ^TODO_FILE= /config/.config/taskboard/config | cut -d= -f2-)"; grep -n "\- \[" "$f"'; }
+docker exec $c bash -c 'f="$(grep ^TODO_FILE= /config/.config/taskboard/config | cut -d= -f2-)"; cat > "$f" <<EOT
 # Todo
 
 - [ ] Vlan 3. gerät
@@ -28,7 +28,7 @@ timeout 60 docker exec $c insession bash -c 'pkill -x plasmashell; sleep 2; (set
 echo "== vorher"; todo
 echo "== Einmal-Sortierung"; cmd migrate 5; todo; cmd updstate; res
 echo "== Jetzt aktualisieren (Version im Container auf 1.2.1 gestellt -> holt 1.2.2 von GitHub)"
-docker exec $c bash -c 'echo 1.2.1 > /config/.local/share/obsidian-todo/version.txt; pgrep -x plasmashell'
+docker exec $c bash -c 'echo 1.2.1 > /config/.local/share/taskboard/version.txt; pgrep -x plasmashell'
 cmd updcheck 8; cmd updstate; res
 cmd updnow 45
-docker exec $c bash -c 'echo "version.txt: $(cat /config/.local/share/obsidian-todo/version.txt)"; echo "plasmashell: $(pgrep -x plasmashell)"; tail -4 /config/.local/share/obsidian-todo/update.log'
+docker exec $c bash -c 'echo "version.txt: $(cat /config/.local/share/taskboard/version.txt)"; echo "plasmashell: $(pgrep -x plasmashell)"; tail -4 /config/.local/share/taskboard/update.log'

@@ -8,11 +8,11 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"; out="$(cd "$root/linux/tests" && (p
 c=obsidian-todo-kde; n="pkg$(date +%s)"
 tmp="$(mktemp -d)"; cp -r "$root/linux/kde/package" "$tmp/$n"; find "$tmp" -type f -exec sed -i 's/\r$//' {} +
 docker cp "$(cd "$tmp" && (pwd -W 2>/dev/null || pwd))/$n" $c:/tmp/$n >/dev/null
-docker exec $c bash -c "cp -r /tmp/$n/. /config/.local/share/plasma/plasmoids/io.github.fantastesy.obsidiantodo/; chown -R abc /config/.local"
-cmd() { docker exec $c bash -c "rm -f /tmp/obsidian-todo-test.out; printf '%s\n' '$1' > /tmp/obsidian-todo-test.cmd; chown abc /tmp/obsidian-todo-test.cmd"; sleep "${2:-3}"; }
-res() { docker exec $c cat /tmp/obsidian-todo-test.out 2>/dev/null; echo; }
+docker exec $c bash -c "cp -r /tmp/$n/. /config/.local/share/plasma/plasmoids/io.github.fantastesy.taskboard/; chown -R abc /config/.local"
+cmd() { docker exec $c bash -c "rm -f /tmp/taskboard-test.out; printf '%s\n' '$1' > /tmp/taskboard-test.cmd; chown abc /tmp/taskboard-test.cmd"; sleep "${2:-3}"; }
+res() { docker exec $c cat /tmp/taskboard-test.out 2>/dev/null; echo; }
 X() { docker exec $c insession bash -c "export DISPLAY=:1; $1"; }
-docker exec $c bash -c 'touch /tmp/obsidian-todo-test.enable; chown abc /tmp/obsidian-todo-test.enable'
+docker exec $c bash -c 'touch /tmp/taskboard-test.enable; chown abc /tmp/taskboard-test.enable'
 timeout 60 docker exec $c insession bash -c 'pkill -x plasmashell; sleep 2; (setsid plasmashell >/tmp/plasma.log 2>&1 &); sleep 18'
 cmd "mode=sidebar" 4
 echo "== normales Fenster oeffnen (kwrite) und nach vorn holen"

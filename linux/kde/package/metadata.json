@@ -2,7 +2,7 @@
     "KPackageStructure": "Plasma/Applet",
     "X-Plasma-API-Minimum-Version": "6.0",
     "KPlugin": {
-        "Id": "io.github.fantastesy.obsidiantodo",
+        "Id": "io.github.fantastesy.taskboard",
         "Name": "Task Board",
         "Description": "Todo-Liste aus deinem Obsidian-Vault",
         "Icon": "checkbox",
