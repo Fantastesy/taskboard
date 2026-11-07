@@ -45,7 +45,7 @@ Window {
     readonly property var unit1: ["täglich", "wöchentlich", "monatlich", "jährlich"]
     readonly property var wds: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
-    title: "Obsidian Todo"
+    title: "Task Board"
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
     color: "transparent"
     readonly property int wantW: panel.implicitWidth

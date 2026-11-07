@@ -1,10 +1,10 @@
-﻿; Installer fuer Obsidian Todo (Inno Setup 7)
+﻿; Installer fuer Task Board (frueher Obsidian Todo) (Inno Setup 7)
 ; Bauen ueber ..\build.ps1 - der uebergibt AppVersion und baut vorher den Skin nach ..\dist\skin.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
-#define AppName "Obsidian Todo"
+#define AppName "Task Board"
 #define SkinDir "..\dist\skin\ObsidianTodo"
 
 [Setup]
@@ -12,14 +12,15 @@ AppId={{16E88833-5A38-4DDC-8401-D15AD3FA1B60}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-AppPublisher=Obsidian Todo
+AppPublisher=Task Board
 VersionInfoVersion={#AppVersion}
-DefaultDirName={localappdata}\Programs\Obsidian Todo
+; bestehende Installationen behalten ihren Ordner (Inno nimmt den vorherigen), neue landen unter "Task Board"
+DefaultDirName={localappdata}\Programs\Task Board
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=lowest
 OutputDir=..\dist
-OutputBaseFilename=ObsidianTodo-Setup-{#AppVersion}
+OutputBaseFilename=TaskBoard-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -40,9 +41,11 @@ Source: "{#SkinDir}\*"; DestDir: "{app}\ObsidianTodo"; Flags: ignoreversion recu
 [InstallDelete]
 ; altes Hilfe-Fenster (seit 1.2.0: Einstellungen)
 Type: filesandordirs; Name: "{app}\ObsidianTodo\Hilfe"
+; Startmenue-Eintrag von vor der Umbenennung in Task Board
+Type: files; Name: "{userprograms}\Obsidian To-do entfernen.lnk"
 
 [Icons]
-Name: "{userprograms}\Obsidian To-do entfernen"; Filename: "{uninstallexe}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 31
+Name: "{userprograms}\Task Board entfernen"; Filename: "{uninstallexe}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 31
 
 [UninstallDelete]
 ; vom Skin zur Laufzeit erzeugte Dateien (settings.inc, hotkey.txt, ...)

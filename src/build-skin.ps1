@@ -51,8 +51,8 @@ MouseOverAction=[!CommandMeasure MeasureSide "Enter()" "ObsidianTodo\Rand"]
 MouseLeaveAction=[!CommandMeasure MeasureSide "Leave()" "ObsidianTodo\Rand"][!CommandMeasure MeasureTodo "DragCancel()"]
 
 [Metadata]
-Name=Obsidian Todo
-Author=Obsidian Todo
+Name=Task Board
+Author=Fantastesy
 Version=$Version
 License=PolyForm Noncommercial 1.0.0
 Information=Zeigt die Checkboxen aus Todo.md im Obsidian-Vault an.
@@ -1533,7 +1533,7 @@ FontFace=#FontFace#
 FontSize=10
 FontColor=#ColorDone#
 AntiAlias=1
-Text=Version $Version
+Text=Task Board $Version
 "@
 # Zeilenenden vereinheitlichen (die Ersetzungen hier erwarten CRLF, egal wie diese Datei gespeichert ist)
 $hini = $hini -replace "(?<!`r)`n", "`r`n"

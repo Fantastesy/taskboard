@@ -308,7 +308,7 @@ exit `$p.ExitCode
             # Knoepfe in den Erinnerungen (todo-rm:done/<id>) -> toast-action.vbs
             $cmdKey = 'HKCU:\Software\Classes\todo-rm'
             New-Item -Path "$cmdKey\shell\open\command" -Force | Out-Null
-            Set-ItemProperty $cmdKey -Name '(default)' -Value 'URL:Obsidian Todo'
+            Set-ItemProperty $cmdKey -Name '(default)' -Value 'URL:Task Board'
             Set-ItemProperty $cmdKey -Name 'URL Protocol' -Value ''
             Set-ItemProperty "$cmdKey\shell\open\command" -Name '(default)' -Value "wscript.exe `"$res\toast-action.vbs`" `"%1`" `"$RainmeterExe`""
 

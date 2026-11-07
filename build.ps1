@@ -1,4 +1,7 @@
-﻿# Baut Obsidian Todo: dist\skin\ObsidianTodo (fertiger Rainmeter-Skin) und dist\ObsidianTodo-Setup.exe
+﻿# Baut Task Board (frueher Obsidian Todo): dist\skin\ObsidianTodo (fertiger Rainmeter-Skin) und dist\TaskBoard-Setup-<version>.exe
+# Dazu eine gleiche Kopie dist\ObsidianTodo-Setup-<version>.exe: Versionen bis 1.3.0 suchen beim Auto-Update nur diesen
+# Namen - beide Dateien mit ins Release hochladen. (Interne Namen wie der Ordner ObsidianTodo bleiben, sonst gingen
+# beim Update Einstellungen und Position verloren.)
 # Aufruf: powershell -File build.ps1 [-Repo besitzer/obsidian-todo] [-Iscc <Pfad zu ISCC.exe>]
 # ISCC.exe wird sonst ueber die Umgebungsvariable ISCC oder die Standard-Installationsorte gesucht.
 param(
@@ -14,10 +17,11 @@ $res = Join-Path $skin '@Resources'
 $version = (Get-Content (Join-Path $root 'VERSION') -TotalCount 1).Trim()
 if (-not $Repo -and (Test-Path (Join-Path $root 'REPO'))) { $Repo = (Get-Content (Join-Path $root 'REPO') -TotalCount 1).Trim() }
 
-Write-Host "Obsidian Todo $version"
+Write-Host "Task Board $version"
 # nur die eigenen Ausgaben loeschen (das Linux-Setup liegt auch in dist\)
 if (Test-Path (Join-Path $dist 'skin')) { Remove-Item (Join-Path $dist 'skin') -Recurse -Force }
-Get-ChildItem $dist -Filter 'ObsidianTodo-Setup*.exe' -ErrorAction SilentlyContinue | Remove-Item -Force
+Get-ChildItem $dist -Filter '*-Setup*.exe' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^(TaskBoard|ObsidianTodo)-Setup' } | Remove-Item -Force
 New-Item -ItemType Directory -Force $res | Out-Null
 
 # 1. Rainmeter-Dateien erzeugen
@@ -45,4 +49,6 @@ if (-not $Iscc) {
 if (-not $Iscc) { throw 'ISCC.exe (Inno Setup 7) nicht gefunden - Pfad mit -Iscc angeben' }
 & $Iscc /Q "/DAppVersion=$version" (Join-Path $root 'installer\ObsidianTodo.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup meldet einen Fehler' }
-Write-Host "Fertig: $(Join-Path $dist "ObsidianTodo-Setup-$version.exe")"
+$exe = Join-Path $dist "TaskBoard-Setup-$version.exe"
+Copy-Item $exe (Join-Path $dist "ObsidianTodo-Setup-$version.exe")   # alter Name fuer Auto-Update bis 1.3.0
+Write-Host "Fertig: $exe (+ Kopie ObsidianTodo-Setup-$version.exe)"

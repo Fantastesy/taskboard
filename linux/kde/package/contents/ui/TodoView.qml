@@ -202,7 +202,7 @@ Rectangle {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             color: P.note
-            text: "Noch nicht eingerichtet – bitte das Obsidian-Todo-Setup ausführen."
+            text: "Noch nicht eingerichtet – bitte das Task-Board-Setup ausführen."
         }
 
         // ---------- Punkte ----------

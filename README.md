@@ -1,4 +1,6 @@
-# Obsidian To-do
+# Task Board
+
+*Früher „Obsidian To-do“.*
 
 Eine Todo-Liste für den Desktop, die direkt als Markdown in deinem [Obsidian](https://obsidian.md)-Vault gespeichert wird – unter **Windows** mit [Rainmeter](https://www.rainmeter.net), unter **Linux** als Widget für **KDE Plasma 6**. Beide nutzen dasselbe Dateiformat, dieselbe `Todo.md` funktioniert also auf beiden Systemen.
 
@@ -14,7 +16,7 @@ Eine Todo-Liste für den Desktop, die direkt als Markdown in deinem [Obsidian](h
 
 ## Installation unter Windows
 
-1. `ObsidianTodo-Setup-<version>.exe` aus den [Releases](../../releases/latest) herunterladen und starten.
+1. `TaskBoard-Setup-<version>.exe` aus den [Releases](../../releases/latest) herunterladen und starten.
 2. Speicherort wählen, Vault auswählen (oder neuen anlegen) – fertig.
 
 Der Installer
@@ -27,11 +29,11 @@ Windows zeigt beim ersten Start evtl. „Der Computer wurde durch Windows gesch�
 
 ## Installation unter Linux (KDE Plasma 6)
 
-Funktioniert auf jeder Distribution mit KDE Plasma 6 (Kubuntu, Fedora KDE, KDE neon, openSUSE, Manjaro/Arch KDE …). `ObsidianTodo-KDE-Setup-<version>.sh` aus den [Releases](../../releases/latest) herunterladen, dann:
+Funktioniert auf jeder Distribution mit KDE Plasma 6 (Kubuntu, Fedora KDE, KDE neon, openSUSE, Manjaro/Arch KDE …). `TaskBoard-KDE-Setup-<version>.sh` aus den [Releases](../../releases/latest) herunterladen, dann:
 
 ```bash
-chmod +x ObsidianTodo-KDE-Setup-*.sh
-./ObsidianTodo-KDE-Setup-*.sh
+chmod +x TaskBoard-KDE-Setup-*.sh
+./TaskBoard-KDE-Setup-*.sh
 ```
 
 Das Setup
@@ -50,20 +52,20 @@ Windows und KDE prüfen beim Start und danach alle 6 Stunden, ob es ein neues Re
 
 ## Deinstallation
 
-Windows: über Einstellungen → Apps. Linux: Startmenü → „Obsidian To-do entfernen“ oder Rechtsklick auf die Liste. `Todo.md` und `Todo-Archiv.md` in deinem Vault bleiben in beiden Fällen erhalten.
+Windows: über Einstellungen → Apps. Linux: Startmenü → „Task Board entfernen“ oder Rechtsklick auf die Liste. `Todo.md` und `Todo-Archiv.md` in deinem Vault bleiben in beiden Fällen erhalten.
 
 ## Selbst bauen
 
 Windows-Setup (Windows 10/11, [Inno Setup 7](https://jrsoftware.org/isinfo.php)):
 
 ```powershell
-powershell -File build.ps1            # -> dist\ObsidianTodo-Setup-<version>.exe
+powershell -File build.ps1            # -> dist\TaskBoard-Setup-<version>.exe (+ Kopie mit altem Namen)
 ```
 
 KDE-Setup (Linux oder WSL):
 
 ```bash
-bash linux/build-kde.sh               # -> dist/ObsidianTodo-KDE-Setup-<version>.sh
+bash linux/build-kde.sh               # -> dist/TaskBoard-KDE-Setup-<version>.sh (+ Kopie mit altem Namen)
 node linux/tests/core-test.js         # Tests für die Logik der KDE-Version
 ```
 
@@ -79,11 +81,11 @@ node linux/tests/core-test.js         # Tests für die Logik der KDE-Version
 | `linux/kde/setup.sh`, `update.sh` | Linux-Setup und automatische Updates |
 | `linux/tests/` | Tests (Logik mit Node, Widget und Setup in einem KDE-Docker-Container) |
 
-Für ein Release: Version in `VERSION` erhöhen, beide Builds ausführen, Release mit Tag `v<VERSION>` anlegen und `dist\ObsidianTodo-Setup-<version>.exe` sowie `dist/ObsidianTodo-KDE-Setup-<version>.sh` anhängen. Die Updater erkennen die Dateien am Namensanfang (`ObsidianTodo-Setup` bzw. `ObsidianTodo-KDE-Setup`), der bleibt also immer gleich.
+Für ein Release: Version in `VERSION` erhöhen, beide Builds ausführen, Release mit Tag `v<VERSION>` anlegen und **alle vier** Setups aus `dist` anhängen: `TaskBoard-Setup-<version>.exe`, `TaskBoard-KDE-Setup-<version>.sh` und die gleichen Kopien `ObsidianTodo-Setup-<version>.exe`, `ObsidianTodo-KDE-Setup-<version>.sh`. Die Updater erkennen die Dateien am Namensanfang: ab der Umbenennung `TaskBoard-…` (oder zur Not den alten Namen), Versionen bis 1.3.0 nur `ObsidianTodo-…` – deshalb die Kopien. Interne Namen (Rainmeter-Ordner `ObsidianTodo`, KDE-ID `io.github.fantastesy.obsidiantodo`, Konfigurationsordner) bleiben absichtlich, sonst gingen beim Update Einstellungen und Position verloren.
 
 ## Lizenz
 
-[PolyForm Noncommercial 1.0.0](LICENSE): Du darfst Obsidian To-do kostenlos benutzen, verändern und weitergeben – privat, in der Schule, im Verein oder in anderen nicht-kommerziellen Einrichtungen. **Verkaufen oder kommerziell einsetzen ist nicht erlaubt.** Für eine kommerzielle Nutzung bitte den Urheber über GitHub fragen.
+[PolyForm Noncommercial 1.0.0](LICENSE): Du darfst Task Board kostenlos benutzen, verändern und weitergeben – privat, in der Schule, im Verein oder in anderen nicht-kommerziellen Einrichtungen. **Verkaufen oder kommerziell einsetzen ist nicht erlaubt.** Für eine kommerzielle Nutzung bitte den Urheber über GitHub fragen.
 
 Versionen bis einschließlich Commit `d905f10` (1. November 2026) wurden unter der MIT-Lizenz veröffentlicht; für diese Stände gilt weiterhin MIT.
 

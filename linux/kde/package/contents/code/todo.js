@@ -1,5 +1,5 @@
 .pragma library
-// Obsidian Todo - Kern fuer das KDE-Plasma-Widget.
+// Task Board (frueher Obsidian Todo) - Kern fuer das KDE-Plasma-Widget.
 // Liest und schreibt dasselbe Markdown-Format wie die Windows-Version (src/todo.lua):
 //   - [ ] Text 🔁 wöchentlich ⏰ 15:00 📅 2026-11-05 ➕ 2026-11-01
 //       - [ ] Unteraufgabe

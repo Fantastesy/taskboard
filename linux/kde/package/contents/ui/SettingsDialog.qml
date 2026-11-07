@@ -17,7 +17,7 @@ Window {
     property var app
     readonly property var cfg: Plasmoid.configuration
 
-    title: "Obsidian Todo – Einstellungen"
+    title: "Task Board – Einstellungen"
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
     color: "transparent"
     width: body.width
@@ -391,7 +391,7 @@ Window {
                     ["Anmelden, Aufwachen, Entsperren", "die Liste kommt kurz von selbst"],
                     ["Farben", "orange = heute fällig, rot = überfällig"],
                     ["Verschieben auf dem Desktop", "an der Kopfzeile (bei „Todo“) ziehen"],
-                    ["Entfernen", "Rechtsklick auf die Liste oder im Startmenü „Obsidian To-do entfernen“"]
+                    ["Entfernen", "Rechtsklick auf die Liste oder im Startmenü „Task Board entfernen“"]
                 ]
                 delegate: PC3.Label {
                     Layout.fillWidth: true
@@ -414,7 +414,7 @@ Window {
                     TapHandler { onTapped: dlg.app.openInObsidian(dlg.app.archiveFile) }
                 }
                 Item { Layout.fillWidth: true }
-                PC3.Label { text: "Version " + dlg.app.version; color: P.done; font: Kirigami.Theme.smallFont }
+                PC3.Label { text: "Task Board " + dlg.app.version; color: P.done; font: Kirigami.Theme.smallFont }
             }
         }
         }

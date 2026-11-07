@@ -1,4 +1,4 @@
-// Obsidian Todo - KDE-Plasma-Widget.
+// Task Board (frueher Obsidian Todo) - KDE-Plasma-Widget.
 // Liest/schreibt die Todo.md ueber kleine Shell-Befehle (cat/base64/mv), weil QML selbst keine Dateien schreiben kann.
 // Pfade kommen aus ~/.config/obsidian-todo/config (schreibt das Setup).
 import QtQuick
@@ -45,7 +45,7 @@ PlasmoidItem {
     Plasmoid.icon: "checkbox"
     // eigener dunkler, durchsichtiger Hintergrund wie unter Windows statt Plasma-Rahmen
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
-    toolTipMainText: "Obsidian Todo"
+    toolTipMainText: "Task Board"
     toolTipSubText: model ? model.openCount + " offen" : ""
     // klein, damit die Liste auf dem Desktop nie zum Symbol wird (der Halter ist nur so hoch wie die Liste)
     switchWidth: inPanel ? Kirigami.Units.gridUnit * 8 : 0
@@ -128,7 +128,7 @@ PlasmoidItem {
         PlasmaCore.Action { text: "In Obsidian öffnen"; icon.name: "document-open"; onTriggered: root.openInObsidian() },
         PlasmaCore.Action { text: "Einstellungen …"; icon.name: "configure"; onTriggered: root.openSettings() },
         PlasmaCore.Action { isSeparator: true },
-        PlasmaCore.Action { text: "Obsidian To-do entfernen …"; icon.name: "edit-delete"; onTriggered: root.runSetup("--uninstall") }
+        PlasmaCore.Action { text: "Task Board entfernen …"; icon.name: "edit-delete"; onTriggered: root.runSetup("--uninstall") }
     ]
 
     // Streifen in der Leiste: fuellt die ganze Leistenlaenge, damit die Maus beim Herausfahren
@@ -561,7 +561,7 @@ PlasmoidItem {
         Core.dueReminders(model, reminderState, new Date(Date.now() + lead)).forEach(function (r) {
             var body = r.title + " (" + r.time + ")";
             if (hasNotifySend) {
-                run('notify-send -a "Obsidian Todo" -i checkbox -u critical --action=done=Erledigt --action=snooze="In 15 Min nochmal" --wait "Todo fällig" ' + q(body),
+                run('notify-send -a "Task Board" -i checkbox -u critical --action=done=Erledigt --action=snooze="In 15 Min nochmal" --wait "Todo fällig" ' + q(body),
                     function (code, out) {
                         var a = out.trim();
                         if (a === "done") doneByKey(r.key);

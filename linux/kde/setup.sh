@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Obsidian Todo - Setup fuer KDE Plasma 6 (alle Distributionen)
+# Task Board (frueher Obsidian Todo) - Setup fuer KDE Plasma 6 (alle Distributionen)
 #
-#   chmod +x ObsidianTodo-KDE-Setup.sh && ./ObsidianTodo-KDE-Setup.sh
+#   chmod +x TaskBoard-KDE-Setup.sh && ./TaskBoard-KDE-Setup.sh
 #
 # Optionen:
 #   --silent      Update ohne Rueckfragen (nutzt die gespeicherte Einrichtung)
@@ -12,7 +12,7 @@
 # Das fertige Setup enthaelt das Widget als Anhang (siehe linux/build-kde.sh).
 set -u
 
-APP="Obsidian Todo"
+APP="Task Board"
 PLUGIN_ID="io.github.fantastesy.obsidiantodo"
 SHORTCUT="Meta+Shift+T"
 CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/obsidian-todo"
@@ -375,7 +375,7 @@ mkdir -p "$TODO_DIR"
 
 mkdir -p "$CONF_DIR"
 cat > "$CONF" <<EOF
-# Obsidian Todo - geschrieben vom Setup
+# Task Board - geschrieben vom Setup
 VAULT=$VAULT
 VAULT_NAME=$(basename "$VAULT")
 TODO_FILE=$TODO_FILE
@@ -409,12 +409,12 @@ printf '%s\n' "$REPO" > "$DATA_DIR/repo.txt"
 [ "$SELF" != "$DATA_DIR/setup.sh" ] && cp "$SELF" "$DATA_DIR/setup.sh"
 chmod +x "$DATA_DIR/setup.sh"
 
-# Startmenue: "Obsidian To-do entfernen"
+# Startmenue: "Task Board entfernen" (Dateiname bleibt, damit Updates den alten Eintrag ersetzen)
 mkdir -p "$(dirname "$MENU_ENTRY")"
 cat > "$MENU_ENTRY" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Obsidian To-do entfernen
+Name=Task Board entfernen
 Comment=Entfernt die Todo-Liste (Todo.md und Archiv bleiben erhalten)
 Exec=bash "$DATA_DIR/setup.sh" --uninstall
 Icon=edit-delete
@@ -471,6 +471,6 @@ $TODO_FILE
 Neuer Eintrag von überall: $SHORTCUT
 Anzeige, Farben und mehr: Zahnrad neben „Todo“.
 Entfernen: Rechtsklick auf die Liste.
-Entfernen geht auch über das Startmenü: „Obsidian To-do entfernen“."
+Entfernen geht auch über das Startmenü: „Task Board entfernen“."
 fi
 exit 0

@@ -3,7 +3,7 @@
     "X-Plasma-API-Minimum-Version": "6.0",
     "KPlugin": {
         "Id": "io.github.fantastesy.obsidiantodo",
-        "Name": "Obsidian Todo",
+        "Name": "Task Board",
         "Description": "Todo-Liste aus deinem Obsidian-Vault",
         "Icon": "checkbox",
         "Category": "Utilities",

@@ -1,6 +1,6 @@
-﻿# Updates fuer Obsidian Todo.
+﻿# Updates fuer Task Board (frueher Obsidian Todo).
 # Automatisch: wird vom Skin beim Laden und alle 6 Stunden gestartet (MeasureUpdate), fragt aber hoechstens
-# alle 6 Stunden bei GitHub nach. Gibt es ein neueres Release, wird ObsidianTodo-Setup-<version>.exe
+# alle 6 Stunden bei GitHub nach. Gibt es ein neueres Release, wird TaskBoard-Setup-<version>.exe
 # geladen, die SHA-256-Pruefsumme verglichen und das Setup unsichtbar ausgefuehrt.
 # Einstellungen und die Todo-Liste bleiben dabei unveraendert.
 #   -Check  von Hand (Einstellungen "Nach Updates suchen"): gibt "neu <version>", "aktuell <version>" oder "fehler" aus
@@ -39,7 +39,7 @@ try {
     }
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'ObsidianTodo-Updater' } -UseBasicParsing
+    $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'TaskBoard-Updater' } -UseBasicParsing
     $latest = [version]($rel.tag_name -replace '^v', '')
     if ($Check) {
         if ($latest -gt $current) { Write-Output "neu $latest" } else { Write-Output "aktuell $current" }
@@ -47,11 +47,12 @@ try {
     }
     if ($latest -le $current) { exit 0 }
 
-    # Name mit oder ohne Versionsnummer: ObsidianTodo-Setup-1.2.0.exe
-    $asset = $rel.assets | Where-Object { $_.name -match '^ObsidianTodo-Setup(-[\d.]+)?\.exe$' } | Select-Object -First 1
+    # Name mit oder ohne Versionsnummer: TaskBoard-Setup-1.4.0.exe, bis 1.3.0 ObsidianTodo-Setup-1.3.0.exe
+    $asset = $rel.assets | Where-Object { $_.name -match '^TaskBoard-Setup(-[\d.]+)?\.exe$' } | Select-Object -First 1
+    if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -match '^ObsidianTodo-Setup(-[\d.]+)?\.exe$' } | Select-Object -First 1 }
     if (-not $asset) { Log "Release $($rel.tag_name) ohne Windows-Setup"; exit 0 }
 
-    $setup = Join-Path $env:TEMP "ObsidianTodo-Setup-$latest.exe"
+    $setup = Join-Path $env:TEMP "TaskBoard-Setup-$latest.exe"
     Invoke-WebRequest $asset.browser_download_url -OutFile $setup -UseBasicParsing
 
     # GitHub liefert die Pruefsumme jeder Release-Datei mit ("sha256:...")
