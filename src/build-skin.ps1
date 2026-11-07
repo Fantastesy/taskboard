@@ -36,7 +36,7 @@ $foldDown = [char]0xE70D # ChevronDown (Liste zu -> ausklappen)
 $obs = '["obsidian://open?path=#TodoUrl#"]'
 
 $ini = @"
-; Obsidian Todo: Desktop-Liste fuer eine Todo.md im Obsidian-Vault
+; Task Board: Desktop-Liste fuer eine Todo.md im Obsidian-Vault
 ; Erzeugt von build-skin.ps1 - Aenderungen dort machen.
 [Rainmeter]
 Update=1000
@@ -592,7 +592,7 @@ $extra
 "@
 }
 $form = @"
-; Formular der Obsidian-Todo-Liste. Erzeugt von ..\@Resources\build-skin.ps1 - Aenderungen dort machen.
+; Formular der Task-Board-Liste. Erzeugt von ..\@Resources\build-skin.ps1 - Aenderungen dort machen.
 [Rainmeter]
 Update=100
 AccurateText=1
@@ -1241,7 +1241,7 @@ function Row($key, $caption, $x, $y, $current, $opts) {
 }
 
 $hini = @"
-; Einstellungen der Obsidian-Todo-Liste. Erzeugt von build-skin.ps1 - Aenderungen dort machen.
+; Einstellungen der Task-Board-Liste. Erzeugt von build-skin.ps1 - Aenderungen dort machen.
 [Rainmeter]
 Update=1000
 AccurateText=1

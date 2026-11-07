@@ -10,7 +10,7 @@
         "Authors": [ { "Name": "Fantastesy" } ],
         "License": "PolyForm-Noncommercial-1.0.0",
         "Version": "1.0.0",
-        "Website": "https://github.com/Fantastesy/obsidian-todo",
+        "Website": "https://github.com/Fantastesy/taskboard",
         "FormFactors": [ "desktop", "panel" ]
     }
 }

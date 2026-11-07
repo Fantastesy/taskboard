@@ -1,4 +1,4 @@
--- Obsidian-Todo: zeigt die Checkbox-Zeilen (- [ ] / - [x]) einer Markdown-Datei
+-- Task Board: zeigt die Checkbox-Zeilen (- [ ] / - [x]) einer Markdown-Datei
 -- an und schreibt Aenderungen (abhaken, neu, bearbeiten, aufraeumen) direkt in die Datei zurueck.
 -- Eingerueckte Checkboxen unter einem Punkt sind Unteraufgaben (immer sichtbar),
 -- andere eingerueckte Zeilen sind Notizen (aufklappbar, Links anklickbar).

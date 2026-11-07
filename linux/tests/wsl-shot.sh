@@ -10,7 +10,7 @@ cat > $H/shot-inner.sh <<'IN'
 plasmawindowed io.github.fantastesy.taskboard > $HOME/widget.log 2>&1 &
 PID=$!
 sleep "$WAIT"
-W=$(xdotool search --name "Obsidian Todo" | tail -1)
+W=$(xdotool search --name "Task Board" | tail -1)
 eval "$ACTION"
 sleep 2
 n=0

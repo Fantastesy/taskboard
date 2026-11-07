@@ -81,7 +81,11 @@ node linux/tests/core-test.js         # Tests für die Logik der KDE-Version
 | `linux/kde/setup.sh`, `update.sh` | Linux-Setup und automatische Updates |
 | `linux/tests/` | Tests (Logik mit Node, Widget und Setup in einem KDE-Docker-Container) |
 
-Für ein Release: Version in `VERSION` erhöhen, beide Builds ausführen, Release mit Tag `v<VERSION>` anlegen und **alle vier** Setups aus `dist` anhängen: `TaskBoard-Setup-<version>.exe`, `TaskBoard-KDE-Setup-<version>.sh` und die gleichen Kopien `ObsidianTodo-Setup-<version>.exe`, `ObsidianTodo-KDE-Setup-<version>.sh`. Die Updater erkennen die Dateien am Namensanfang: ab der Umbenennung `TaskBoard-…` (oder zur Not den alten Namen), Versionen bis 1.3.0 nur `ObsidianTodo-…` – deshalb die Kopien. Interne Namen (Rainmeter-Ordner `ObsidianTodo`, KDE-ID `io.github.fantastesy.obsidiantodo`, Konfigurationsordner) bleiben absichtlich, sonst gingen beim Update Einstellungen und Position verloren.
+Für ein Release: Version in `VERSION` erhöhen, beide Builds ausführen, Release mit Tag `v<VERSION>` anlegen und **alle vier** Setups aus `dist` anhängen: `TaskBoard-Setup-<version>.exe`, `TaskBoard-KDE-Setup-<version>.sh` und die gleichen Kopien `ObsidianTodo-Setup-<version>.exe`, `ObsidianTodo-KDE-Setup-<version>.sh`. Die Updater erkennen die Dateien am Namensanfang: ab der Umbenennung `TaskBoard-…` (oder zur Not den alten Namen), Versionen bis 1.3.0 nur `ObsidianTodo-…` – deshalb die Kopien.
+
+**Umzug von „Obsidian Todo“ (bis 1.3.0):** Seit der Umbenennung heißt auch intern alles Task Board (Rainmeter-Skin `TaskBoard`, `TaskBoardHotkey.exe`, Registry `HKCU\Software\TaskBoard`, KDE-ID `io.github.fantastesy.taskboard`, Ordner `~/.config/taskboard` usw.). Das Setup zieht eine alte Installation dabei selbst um – Liste, Einstellungen, Fensterposition und Tastenkürzel bleiben erhalten:
+- Windows: `installer/helper.ps1` → `Move-OldInstall` (Laufzeitdateien übernehmen, Abschnitte in `Rainmeter.ini` umbenennen, alte Reste entfernen; ein Programmordner „Obsidian Todo“ wird zu „Task Board“ daneben).
+- KDE: `linux/kde/setup.sh` → `migrate_files` und `migrate_widget` (altes Widget auslesen und entfernen, danach das neue an dieselbe Stelle setzen).
 
 ## Lizenz
 

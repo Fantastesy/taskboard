@@ -3,7 +3,14 @@
 ## Noch nicht veröffentlicht
 
 ### Windows und Linux (KDE)
-- **Neuer Name: Task Board** (früher „Obsidian Todo“). Setup, Programmliste, Startmenü („Task Board entfernen“), Einstellungen und Widget heißen jetzt so. Beim Update bleibt alles erhalten: Liste, Einstellungen, Position und Tastenkürzel. Die Setup-Dateien heißen `TaskBoard-Setup-<version>.exe` und `TaskBoard-KDE-Setup-<version>.sh`.
+- **Neuer Name: Task Board** (früher „Obsidian Todo“). Setup, Programmliste, Startmenü („Task Board entfernen“), Einstellungen und Widget heißen jetzt so – auch alle Ordner und Einträge im System. Das Update zieht eine bestehende Installation automatisch um; Liste, Einstellungen, Position und Tastenkürzel bleiben erhalten. Unter Windows wird ein Programmordner „Obsidian Todo“ zu „Task Board“ am selben Ort. Die Setup-Dateien heißen `TaskBoard-Setup-<version>.exe` und `TaskBoard-KDE-Setup-<version>.sh`, das Projekt auf GitHub heißt `taskboard` (alte Links leiten weiter).
+
+### Windows
+- **Rainmeter startet nach dem Setup zuverlässig:** Musste das Setup Rainmeter selbst starten, stürzte es dabei manchmal ab und die Liste fehlte bis zum nächsten Neustart. Jetzt wird Rainmeter wie per Doppelklick gestartet.
+- **Kein zweites Rainmeter mehr:** Ein portables Rainmeter, das beim Setup gerade nicht lief, wurde nicht gefunden – das Setup installierte dann ein zweites. Jetzt merkt es sich den Ort (und schaut in der Autostart-Verknüpfung nach); bei einem Update wird nie ein zweites Rainmeter installiert.
+
+### Linux (KDE)
+- **Neue Liste landet oben rechts:** Bei der Erstinstallation erschien die Liste in der Bildschirmmitte statt oben rechts.
 
 ## 1.3.0 – 7. November 2026
 

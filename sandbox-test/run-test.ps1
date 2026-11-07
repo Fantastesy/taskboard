@@ -1,7 +1,7 @@
-﻿# Laeuft IN der Windows-Sandbox: installiert ObsidianTodo-Setup.exe unbeaufsichtigt und prueft Seitenleiste,
+# Laeuft IN der Windows-Sandbox: installiert TaskBoard-Setup.exe unbeaufsichtigt und prueft Seitenleiste,
 # Einblenden, Einstellungen und Deinstallation. Ergebnisse in Desktop\out (test.log + Bilder einzelner Fenster).
 $out = 'C:\Users\WDAGUtilityAccount\Desktop\out'
-$in = 'C:\Users\WDAGUtilityAccount\Desktop\ObsidianTodo-Test'
+$in = 'C:\Users\WDAGUtilityAccount\Desktop\TaskBoard-Test'
 $log = "$out\test.log"
 function W($s) { Add-Content -Path $log -Value $s -Encoding UTF8 }
 
@@ -40,18 +40,18 @@ function Snap($end, $name) {
     $b = New-Object Drawing.Bitmap $w, $ht; $g = [Drawing.Graphics]::FromImage($b); $g.Clear([Drawing.Color]::FromArgb(255, 70, 90, 120))
     $dc = $g.GetHdc(); [void][RW]::PrintWindow($h, $dc, 2); $g.ReleaseHdc($dc); $b.Save("$out\$name.png")
 }
-$LIST = '\ObsidianTodo\Todo.ini'; $RAND = '\ObsidianTodo\Rand\Rand.ini'; $SET = '\ObsidianTodo\Einstellungen\Einstellungen.ini'
+$LIST = '\TaskBoard\Todo.ini'; $RAND = '\TaskBoard\Rand\Rand.ini'; $SET = '\TaskBoard\Einstellungen\Einstellungen.ini'
 $wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 W "Start: $(Get-Date -Format s)  Arbeitsbereich: $wa"
 
 # ---------- Installation ----------
-Copy-Item (Get-ChildItem "$in\ObsidianTodo-Setup*.exe" | Select-Object -First 1).FullName "$env:TEMP\setup.exe"
+Copy-Item (Get-ChildItem "$in\TaskBoard-Setup*.exe" | Select-Object -First 1).FullName "$env:TEMP\setup.exe"
 $p = Start-Process "$env:TEMP\setup.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$out\inno.log" -PassThru
 $p.WaitForExit()
 W "Setup Exitcode: $($p.ExitCode)"
 Start-Sleep -Seconds 12
 $rm = (Get-Process Rainmeter | Select-Object -First 1).Path
-W "Helper-Log:"; Get-Content "$env:TEMP\ObsidianTodo-Setup.log" -ErrorAction SilentlyContinue | ForEach-Object { W "   $_" }
+W "Helper-Log:"; Get-Content "$env:TEMP\TaskBoard-Setup.log" -ErrorAction SilentlyContinue | ForEach-Object { W "   $_" }
 W "Mauszeiger nach Installation: $([Windows.Forms.Cursor]::Position)"
 W "Nach Installation: Liste $(Win $LIST) | Rand $(Win $RAND)"
 
@@ -77,29 +77,29 @@ Snap $LIST 'rand-erneut'
 W "Wieder weg: Liste $(Win $LIST)"
 
 # ---------- Einblenden (wie beim Anmelden) ----------
-& $rm '!CommandMeasure' 'MeasureTodo' 'Reveal()' 'ObsidianTodo'; Start-Sleep -Seconds 2
+& $rm '!CommandMeasure' 'MeasureTodo' 'Reveal()' 'TaskBoard'; Start-Sleep -Seconds 2
 W "Einblenden: Liste $(Win $LIST)"
 Snap $LIST 'eingeblendet'
 Start-Sleep -Seconds 12
 W "Nach 14 s (1 Punkt = 10 s): Liste $(Win $LIST)"
 
 # ---------- Einstellungen ----------
-& $rm '!ActivateConfig' 'ObsidianTodo\Einstellungen' 'Einstellungen.ini'; Start-Sleep -Seconds 3
+& $rm '!ActivateConfig' 'TaskBoard\Einstellungen' 'Einstellungen.ini'; Start-Sleep -Seconds 3
 W "Einstellungen: $(Win $SET)"
 Snap $SET 'einstellungen'
 
 # ---------- Umschalten auf Desktop ----------
-$prefs = "$env:USERPROFILE\Documents\Rainmeter\Skins\ObsidianTodo\@Resources\prefs.inc"
-& $rm '!WriteKeyValue' 'Variables' 'Mode' 'desktop' $prefs; & $rm '!Refresh' 'ObsidianTodo'; Start-Sleep -Seconds 4
+$prefs = "$env:USERPROFILE\Documents\Rainmeter\Skins\TaskBoard\@Resources\prefs.inc"
+& $rm '!WriteKeyValue' 'Variables' 'Mode' 'desktop' $prefs; & $rm '!Refresh' 'TaskBoard'; Start-Sleep -Seconds 4
 W "Desktop-Modus: Liste $(Win $LIST) | Rand $(Win $RAND)"
 Snap $LIST 'desktop'
 W "prefs.inc: $((Get-Content $prefs -Encoding Unicode) -join ' | ')"
 
 # ---------- Deinstallation ----------
-$un = Get-ChildItem "$env:LOCALAPPDATA\Programs\Obsidian Todo\unins*.exe" | Select-Object -First 1
+$un = Get-ChildItem "$env:LOCALAPPDATA\Programs\Task Board\unins*.exe" | Select-Object -First 1
 $p = Start-Process $un.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -PassThru
 $p.WaitForExit(); Start-Sleep -Seconds 5
-W "Nach Deinstallation: Liste $(Win $LIST) | Rand $(Win $RAND) | Aufgabe=$([bool](Get-ScheduledTask -TaskName 'ObsidianTodo-Einblenden' -ErrorAction SilentlyContinue)) | Todo.md=$(Test-Path "$env:USERPROFILE\Documents\Obsidian Vault\Todo.md")"
+W "Nach Deinstallation: Liste $(Win $LIST) | Rand $(Win $RAND) | Aufgabe=$([bool](Get-ScheduledTask -TaskName 'TaskBoard-Einblenden' -ErrorAction SilentlyContinue)) | Todo.md=$(Test-Path "$env:USERPROFILE\Documents\Obsidian Vault\Todo.md")"
 Copy-Item "$env:APPDATA\Rainmeter\Rainmeter.log" "$out\Rainmeter.log" -ErrorAction SilentlyContinue
 W "Ende: $(Get-Date -Format s)"
 Set-Content "$out\fertig.txt" 'ok'
