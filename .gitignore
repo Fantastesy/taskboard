@@ -3,3 +3,6 @@ dist/
 sandbox-out/
 *.wsb
 linux/tests/*.png
+
+# Google-OAuth-Zugang (Task Board 2.0), nicht hochladen
+.secrets/
