@@ -305,7 +305,9 @@ class TaskBoardHotkey : Form
             File.WriteAllText(Path.Combine(dir, "hotkey.txt"), f.Combo ?? "keins frei");
             // fuer das Einstellungen-Fenster (hebt das aktive Kuerzel hervor)
             File.WriteAllText(Path.Combine(dir, "hotkey.inc"), "[Variables]\r\nHotkeyNow=" + (f.Combo ?? "keins frei") + "\r\n", System.Text.Encoding.Unicode);
-            if (f.Combo == null || f.Combo == "aus") return;
+            // Google-Abgleich im Hintergrund (google.cs); er haelt den Prozess auch ohne Tastenkuerzel am Leben
+            GoogleBackground.Start(dir);
+            if ((f.Combo == null || f.Combo == "aus") && !GoogleBackground.Wanted(dir)) return;
             Application.Run(f);
         }
     }

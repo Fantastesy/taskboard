@@ -33,10 +33,13 @@ CloseApplications=no
 Name: "de"; MessagesFile: "compiler:Languages\German.isl"
 
 [Messages]
-de.WelcomeLabel2=Damit bekommst du eine Todo-Liste auf dem Desktop, die direkt in deinem Obsidian-Vault gespeichert wird.%n%nRainmeter (zeigt die Liste auf dem Desktop an) wird bei Bedarf automatisch mitinstalliert.
+de.WelcomeLabel2=Damit bekommst du eine Todo-Liste auf dem Desktop – gespeichert in deinem Obsidian-Vault, in Google Tasks oder in beiden.%n%nRainmeter (zeigt die Liste auf dem Desktop an) wird bei Bedarf automatisch mitinstalliert.
 
 [Files]
 Source: "helper.ps1"; Flags: dontcopy
+; fuer die Google-Anmeldung schon waehrend des Setups (TaskBoardHotkey.exe --google-connect)
+Source: "{#SkinDir}\@Resources\TaskBoardHotkey.exe"; Flags: dontcopy
+Source: "{#SkinDir}\@Resources\google-client.json"; Flags: dontcopy skipifsourcedoesntexist
 Source: "helper.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SkinDir}\*"; DestDir: "{app}\TaskBoard"; Flags: ignoreversion recursesubdirs createallsubdirs
 
@@ -76,6 +79,13 @@ var
   SilentVault: String;
   DownloadPage: TDownloadWizardPage;
   OldAppDir: String;
+  { Speicherort (nur bei Neuinstallation): Obsidian und/oder Google Tasks }
+  FreshInstall: Boolean;
+  StorePage, GooglePage: TWizardPage;
+  ObsCheck, GoogleCheck: TNewCheckBox;
+  GoogleBtn: TNewButton;
+  GoogleLabel: TNewStaticText;
+  GoogleListId, GoogleListName: String;
 
 { bisheriger Programmordner (leer bei Erstinstallation) }
 function PrevAppDir: String;
@@ -158,6 +168,42 @@ begin
   Result := RainmeterExe = '';
 end;
 
+{ Obsidian gewaehlt? Bei Updates immer (die Einstellung bleibt, wie sie ist) }
+function UseObsidian: Boolean;
+begin
+  Result := (not FreshInstall) or ObsCheck.Checked;
+end;
+
+{ Google-Anmeldung im Setup: TaskBoardHotkey.exe meldet an, laesst die Liste waehlen und schreibt "id<TAB>name" }
+procedure GoogleConnectClick(Sender: TObject);
+var
+  RC, P: Integer;
+  OutFile: String;
+  Lines: TArrayOfString;
+begin
+  ExtractTemporaryFile('TaskBoardHotkey.exe');
+  try ExtractTemporaryFile('google-client.json'); except end;
+  OutFile := ExpandConstant('{tmp}\google-list.txt');
+  DeleteFile(OutFile);
+  GoogleBtn.Enabled := False;
+  GoogleLabel.Caption := 'Dein Browser öffnet sich – bitte bei Google anmelden und Task Board erlauben. ' +
+    'Bei „Google hat diese App nicht überprüft“: „Erweitert“ und dann „Zu Task Board wechseln“. Danach die Liste wählen.';
+  WizardForm.Repaint;
+  Exec(ExpandConstant('{tmp}\TaskBoardHotkey.exe'), '--google-connect --out "' + OutFile + '"', '', SW_SHOWNORMAL, ewWaitUntilTerminated, RC);
+  GoogleBtn.Enabled := True;
+  if (RC = 0) and LoadStringsFromFile(OutFile, Lines) and (GetArrayLength(Lines) > 0) and (Pos(#9, Lines[0]) > 0) then
+  begin
+    if (Length(Lines[0]) > 0) and (Lines[0][1] = #$FEFF) then Delete(Lines[0], 1, 1);
+    P := Pos(#9, Lines[0]);
+    GoogleListId := Copy(Lines[0], 1, P - 1);
+    GoogleListName := Copy(Lines[0], P + 1, MaxInt);
+    GoogleLabel.Caption := 'Verbunden. Deine Aufgaben kommen in die Google-Liste „' + GoogleListName + '“.';
+    GoogleBtn.Caption := 'Andere Liste wählen';
+  end
+  else
+    GoogleLabel.Caption := 'Die Anmeldung hat nicht geklappt oder wurde abgebrochen. Du kannst es nochmal versuchen.';
+end;
+
 function NeedObsidian: Boolean;
 begin
   Result := ObsidianExe = '';
@@ -226,9 +272,54 @@ begin
     RegQueryStringValue(HKCU, OldRegKey, 'Vault', PrevVault);
   if not RegQueryStringValue(HKCU, RegKey, 'TodoDir', PrevTodoDir) then
     RegQueryStringValue(HKCU, OldRegKey, 'TodoDir', PrevTodoDir);
+  { Neuinstallation: noch nie installiert und keine alte Handversion }
+  FreshInstall := (PrevAppDir = '') and (PrevVault = '') and (OldTodoDir = '');
+
+  { Seite: Speicherort (Haekchen, mindestens eins) - nur bei Neuinstallation }
+  StorePage := CreateCustomPage(wpSelectDir, 'Speicherort', 'Wo sollen deine Aufgaben gespeichert werden?');
+  ObsCheck := TNewCheckBox.Create(StorePage);
+  ObsCheck.Parent := StorePage.Surface;
+  ObsCheck.Width := StorePage.SurfaceWidth;
+  ObsCheck.Caption := 'Obsidian – als Todo.md in deinem Obsidian-Vault';
+  ObsCheck.Checked := True;
+  GoogleCheck := TNewCheckBox.Create(StorePage);
+  GoogleCheck.Parent := StorePage.Surface;
+  GoogleCheck.Top := ObsCheck.Top + ObsCheck.Height + ScaleY(14);
+  GoogleCheck.Width := StorePage.SurfaceWidth;
+  GoogleCheck.Caption := 'Google Tasks – auch am Handy, Anmeldung mit deinem Google-Konto';
+  GoogleCheck.Checked := False;
+  with TNewStaticText.Create(StorePage) do
+  begin
+    Parent := StorePage.Surface;
+    Top := GoogleCheck.Top + GoogleCheck.Height + ScaleY(18);
+    Width := StorePage.SurfaceWidth;
+    AutoSize := False;
+    WordWrap := True;
+    Height := ScaleY(80);
+    Caption := 'Beides angehakt: Die Liste wird in beide Richtungen abgeglichen – was du in Obsidian änderst, ' +
+      'landet bei Google, und was du am Handy änderst, steht danach auch in Obsidian. Später umstellbar im Zahnrad neben „Todo“.';
+  end;
+
+  { Seite: Google-Anmeldung }
+  GooglePage := CreateCustomPage(StorePage.ID, 'Google Tasks', 'Mit deinem Google-Konto verbinden');
+  GoogleLabel := TNewStaticText.Create(GooglePage);
+  GoogleLabel.Parent := GooglePage.Surface;
+  GoogleLabel.Width := GooglePage.SurfaceWidth;
+  GoogleLabel.AutoSize := False;
+  GoogleLabel.WordWrap := True;
+  GoogleLabel.Height := ScaleY(90);
+  GoogleLabel.Caption := 'Klicke auf „Mit Google anmelden“. Dein Browser öffnet sich; danach wählst du, in welcher Google-Liste ' +
+    'deine Aufgaben liegen sollen. Andere Listen in deinem Konto bleiben unberührt.';
+  GoogleBtn := TNewButton.Create(GooglePage);
+  GoogleBtn.Parent := GooglePage.Surface;
+  GoogleBtn.Top := GoogleLabel.Top + GoogleLabel.Height + ScaleY(10);
+  GoogleBtn.Width := ScaleX(200);
+  GoogleBtn.Height := ScaleY(30);
+  GoogleBtn.Caption := 'Mit Google anmelden';
+  GoogleBtn.OnClick := @GoogleConnectClick;
 
   { Seite: Voraussetzungen }
-  PrereqPage := CreateCustomPage(wpSelectDir, 'Benötigte Programme', 'Was zusätzlich installiert wird');
+  PrereqPage := CreateCustomPage(GooglePage.ID, 'Benötigte Programme', 'Was zusätzlich installiert wird');
   PrereqLabel := TNewStaticText.Create(PrereqPage);
   PrereqLabel.Parent := PrereqPage.Surface;
   PrereqLabel.Width := PrereqPage.SurfaceWidth;
@@ -302,13 +393,15 @@ begin
         '(Windows fragt dafür einmal nach Administratorrechten).' + #13#10#13#10
     else
       S := S + 'Rainmeter: gefunden (' + RainmeterExe + ')' + #13#10#13#10;
-    if NeedObsidian then
+    if not UseObsidian then
+      S := S + ''
+    else if NeedObsidian then
       S := S + 'Obsidian ist nicht installiert. Die Todo-Liste funktioniert auch ohne, ' +
         'du kannst sie dann aber nicht in Obsidian öffnen.'
     else
       S := S + 'Obsidian: gefunden';
     PrereqLabel.Caption := S;
-    ObsidianCheck.Visible := NeedObsidian;
+    ObsidianCheck.Visible := NeedObsidian and UseObsidian;
   end
   else if CurPageID = TodoPage.ID then
   begin
@@ -323,7 +416,10 @@ end;
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := False;
-  if (PageID = PrereqPage.ID) then Result := not NeedRainmeter and not NeedObsidian
+  if (PageID = StorePage.ID) then Result := not FreshInstall
+  else if (PageID = GooglePage.ID) then Result := not FreshInstall or not GoogleCheck.Checked
+  else if (PageID = PrereqPage.ID) then Result := not NeedRainmeter and not (NeedObsidian and UseObsidian)
+  else if not UseObsidian and ((PageID = KeepPage.ID) or (PageID = VaultPage.ID) or (PageID = NewVaultPage.ID) or (PageID = TodoPage.ID)) then Result := True
   else if (PageID = KeepPage.ID) then Result := KnownTodoDir = ''
   else if (PageID = VaultPage.ID) then Result := KeepSetup or (VaultList.Count = 0)
   else if (PageID = NewVaultPage.ID) then Result := KeepSetup or not NewVaultChosen
@@ -356,7 +452,7 @@ end;
 function WantObsidian: Boolean;
 begin
   { ohne Fenster (Updates, automatische Tests) nie ungefragt Obsidian installieren }
-  Result := NeedObsidian and ObsidianCheck.Checked and not WizardSilent;
+  Result := NeedObsidian and UseObsidian and ObsidianCheck.Checked and not WizardSilent;
 end;
 
 { Rainmeter/Obsidian laden (mit Fortschrittsanzeige) und installieren }
@@ -448,6 +544,25 @@ var
   V: String;
 begin
   Result := True;
+  if (CurPageID = StorePage.ID) and not ObsCheck.Checked and not GoogleCheck.Checked then
+  begin
+    MsgBox('Bitte mindestens einen Speicherort anhaken.', mbInformation, MB_OK);
+    Result := False;
+    Exit;
+  end;
+  if (CurPageID = GooglePage.ID) and (GoogleListId = '') then
+  begin
+    if not ObsCheck.Checked then
+    begin
+      MsgBox('Bitte zuerst bei Google anmelden – oder auf der vorigen Seite „Obsidian“ anhaken.', mbInformation, MB_OK);
+      Result := False;
+    end
+    else if MsgBox('Ohne Google weiter? Du kannst Google später im Zahnrad neben „Todo“ verbinden.', mbConfirmation, MB_YESNO) = IDYES then
+      GoogleCheck.Checked := False
+    else
+      Result := False;
+    Exit;
+  end;
   if CurPageID = KeepPage.ID then ApplyKeep;
   if CurPageID = TodoPage.ID then
   begin
@@ -513,10 +628,16 @@ begin
     if NewVaultChosen then Args := Args + ' -NewVault';
     if (OldAppDir <> '') and (CompareText(OldAppDir, RemoveBackslash(ExpandConstant('{app}'))) <> 0) then
       Args := Args + ' -OldApp ' + Q(OldAppDir);
+    if FreshInstall and GoogleCheck.Checked and (GoogleListId <> '') then
+      Args := Args + ' -GoogleList ' + Q(GoogleListId) + ' -GoogleListName ' + Q(GoogleListName);
+    if not UseObsidian then Args := Args + ' -NoObsidian';
     if RunHelper(Args) then
     begin
-      RegWriteStringValue(HKCU, RegKey, 'Vault', RemoveBackslash(ChosenVault));
-      RegWriteStringValue(HKCU, RegKey, 'TodoDir', RemoveBackslash(TodoPage.Values[0]));
+      if UseObsidian then
+      begin
+        RegWriteStringValue(HKCU, RegKey, 'Vault', RemoveBackslash(ChosenVault));
+        RegWriteStringValue(HKCU, RegKey, 'TodoDir', RemoveBackslash(TodoPage.Values[0]));
+      end;
     end
     else if not WizardSilent then
       MsgBox('Beim Einrichten ist etwas schiefgegangen. Details stehen in ' +

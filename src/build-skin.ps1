@@ -33,7 +33,7 @@ LeftMouseUpAction=$action
 }
 $foldUp = [char]0xE70E   # ChevronUp (Liste offen -> einklappen)
 $foldDown = [char]0xE70D # ChevronDown (Liste zu -> ausklappen)
-$obs = '["obsidian://open?path=#TodoUrl#"]'
+$obs = '["#TodoOpen#"]'   # Obsidian (Standard) oder bei "nur Google" Google Tasks im Browser (settings.inc)
 
 $ini = @"
 ; Task Board: Desktop-Liste fuer eine Todo.md im Obsidian-Vault
@@ -44,7 +44,7 @@ AccurateText=1
 DynamicWindowSize=1
 ; Tastenkuerzel-Helfer (Strg+Alt+T bzw. Win+Shift+T -> Neuer Punkt); laeuft nur einmal, bleibt bei Refresh bestehen
 OnRefreshAction=["#@#TaskBoardHotkey.exe" "#PROGRAMPATH#Rainmeter.exe"]
-ContextTitle=Todo.md in Obsidian öffnen
+ContextTitle=#TodoOpenTip#
 ContextAction=$obs
 ; Seitenleiste: Maus in der Liste haelt sie offen, Verlassen laesst sie hinausfahren (sidebar.lua)
 MouseOverAction=[!CommandMeasure MeasureSide "Enter()" "TaskBoard\Rand"]
@@ -64,6 +64,8 @@ ArchiveFile=#@#Todo-Archiv.md
 VaultName=
 TodoUrl=
 ArchiveUrl=
+TodoOpen=obsidian://open?path=#TodoUrl#
+TodoOpenTip=In Obsidian öffnen
 @IncludeSettings=#@#settings.inc
 MaxItems=15
 MaxNotes=30
@@ -224,7 +226,7 @@ FontColor=#ColorText#
 AntiAlias=1
 Text=Todo
 LeftMouseUpAction=$obs
-ToolTipText=In Obsidian öffnen
+ToolTipText=#TodoOpenTip#
 
 [MeterCount]
 Meter=String
@@ -1108,7 +1110,7 @@ $helpLines = @(
 # ---------- Einstellungen-Fenster: Config TaskBoard\Einstellungen, zwei Spalten ----------
 $hw = 960                       # Fensterbreite
 $colL = 22; $colR = 500; $colW = 438
-$archive = '["obsidian://open?path=#ArchiveUrl#"]'
+$archive = '["#ArchiveOpen#"]'
 # ----- Knoepfe: abgerundete Flaeche mit Rand (Shape) + Beschriftung darueber -----
 # Breite aus der Textbreite (Segoe UI Semibold), damit die Knoepfe ohne Laufzeit-Rechnerei fest liegen.
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
@@ -1252,7 +1254,17 @@ OnRefreshAction=[!ZPos 2][!SetWindowPosition "50%" "50%" "50%" "50%"]
 [Variables]
 ArchiveUrl=
 TodoFile=
+ArchiveOpen=obsidian://open?path=#ArchiveUrl#
 @IncludeSettings=#@#settings.inc
+; Speichern in (prefs.inc): Obsidian an/aus, Google an/aus + Liste; Stand vom Abgleich: google-status.inc
+ObsidianOn=1
+GoogleOn=0
+GoogleList=
+GoogleListName=
+GoogleState=aus
+GoogleStatus=Nicht mit Google verbunden.
+GoogleConnected=0
+@IncludeGoogle=#@#google-status.inc
 Width=460
 Mode=sidebar
 Side=right
@@ -1345,6 +1357,18 @@ Program=powershell.exe
 Parameter=-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "#@#update.ps1" -Now
 State=Hide
 Timeout=-1
+
+; Google: verbinden / Liste waehlen / trennen / Obsidian an-aus (TaskBoardHotkey.exe, google.cs).
+; Parameter setzt settings.lua vor dem Start.
+[MeasureGoogle]
+Measure=Plugin
+Plugin=RunCommand
+Program="#@#TaskBoardHotkey.exe"
+Parameter=--google-status
+State=Hide
+OutputType=UTF8
+Timeout=-1
+FinishAction=[!CommandMeasure MeasureSettings "GoogleDone()"]
 
 ; Todo-Datei waehlen (Dateidialog, schreibt settings.inc)
 [MeasureChoose]
@@ -1465,10 +1489,21 @@ $hini += SetChip 'HotkeyReset' ($colR + 198) 'r' 'Zurücksetzen' "$(P Hotkey '')
 $hini += "[SelHotkeyNow]`r`nMeasure=String`r`nString=x`r`nIfMatch=x`r`nIfMatchAction=$($sel -f 'HotkeyNow1')`r`n`r`n"
 $hini += Spacer 'EndHotkey' $colR
 $hini += Small 'HotkeyInfo' 'Zum Ändern auf das Kürzel klicken und die neue Kombination drücken (Esc = abbrechen).' $colR
-$hini += Caption 'CapFile' 'Todo-Datei' $colR
+# Speichern in: zwei Haekchen (mindestens eins an) - Logik in settings.lua Store(), Rest in TaskBoardHotkey.exe
+$hini += Caption 'CapStore' 'Speichern in' $colR
+$storeW = BtnWidth '✓ Google Tasks'
+$hini += SetChip 'StoreObs' $colR '10R' 'Obsidian' "[!CommandMeasure MeasureSettings `"Store('obsidian')`"]" '#ColorNote#' 11 $storeW
+$hini += SetChip 'StoreGoogle' ($colR + $storeW + 8) 'r' 'Google Tasks' "[!CommandMeasure MeasureSettings `"Store('google')`"]" '#ColorNote#' 11 $storeW
+$hini += "[SelStoreObs]`r`nMeasure=String`r`nString=#ObsidianOn#`r`nIfMatch=^1$`r`nIfMatchAction=$($sel -f 'StoreObs')`r`n`r`n"
+$hini += "[SelStoreGoogle]`r`nMeasure=String`r`nString=#GoogleOn#`r`nIfMatch=^1$`r`nIfMatchAction=$($sel -f 'StoreGoogle')`r`n`r`n"
+$hini += Spacer 'EndStore' $colR
 $hini += Small 'FileNow' '#TodoFile#' $colR
 $hini += SetChip 'File1' $colR '10R' 'Andere Datei wählen …' '[!CommandMeasure MeasureChoose "Run"]'
 $hini += Spacer 'EndFile' $colR
+$hini += Small 'GoogleInfo' '#GoogleStatus#' $colR '14R'
+$hini += SetChip 'GList' $colR '10R' 'Liste wählen …' "[!CommandMeasure MeasureSettings `"GoogleRun('--google-pick-list')`"]"
+$hini += SetChip 'GOff' ($colR + (BtnWidth 'Liste wählen …') + 8) 'r' 'Verbindung trennen' "[!CommandMeasure MeasureSettings `"GoogleRun('--google-disconnect')`"]"
+$hini += Spacer 'EndGoogle' $colR
 $hini += Row 'Update' 'Automatische Updates' $colR '22R' '#AutoUpdate#' @(
     @('An', '^1$', "$(P AutoUpdate 1)[!Refresh]"),
     @('Aus', '^0$', "$(P AutoUpdate 0)[!Refresh]"))

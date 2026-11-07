@@ -38,8 +38,13 @@ $ascii = New-Object Text.UTF8Encoding($false)
 
 # 3. Tastenkuerzel-Programm mit dem C#-Compiler aus .NET Framework 4 (auf jedem Windows 10/11 vorhanden)
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-& $csc /nologo /target:winexe /optimize+ "/out:$(Join-Path $res 'TaskBoardHotkey.exe')" (Join-Path $src 'hotkey.cs')
-if ($LASTEXITCODE -ne 0) { throw 'hotkey.cs liess sich nicht kompilieren' }
+& $csc /nologo /target:winexe /optimize+ /codepage:65001 /r:System.Web.Extensions.dll /r:System.Security.dll "/out:$(Join-Path $res 'TaskBoardHotkey.exe')" (Join-Path $src 'hotkey.cs') (Join-Path $src 'google.cs')
+if ($LASTEXITCODE -ne 0) { throw 'hotkey.cs/google.cs liessen sich nicht kompilieren' }
+# Zugang zum Google-Cloud-Projekt "Task Board" (Desktop-App). Liegt nicht im Repo (.secrets/ in .gitignore),
+# wird nur ins fertige Paket gelegt. Ohne die Datei gibt es keine Google-Anbindung.
+$client = Join-Path $root '.secrets\google-client.json'
+if (Test-Path $client) { Copy-Item $client (Join-Path $res 'google-client.json') }
+else { Write-Warning 'google-client.json fehlt (.secrets\) - Build ohne Google-Anbindung' }
 
 # 4. Setup bauen
 if (-not $Iscc) {

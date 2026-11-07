@@ -9,7 +9,8 @@
 param(
     [Parameter(Mandatory)][ValidateSet('detect', 'resolve', 'install', 'apply', 'uninstall')][string]$Mode,
     [string]$Out, [string]$What, [string]$File, [string]$App, [string]$Vault, [string]$TodoDir,
-    [string]$RainmeterExe, [string]$SkinPath, [switch]$NewVault, [string]$OldApp
+    [string]$RainmeterExe, [string]$SkinPath, [switch]$NewVault, [string]$OldApp,
+    [string]$GoogleList, [string]$GoogleListName, [switch]$NoObsidian
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # sonst ist Invoke-WebRequest in PowerShell 5 extrem langsam
@@ -398,43 +399,68 @@ exit `$p.ExitCode
         'apply' {
             $res = Join-Path $App "$SkinName\@Resources"
             try { Move-OldInstall } catch { Log "Umzug FEHLER: $_" }
-            New-Item -ItemType Directory -Force $Vault, $TodoDir | Out-Null
+            if ($Vault -and $TodoDir -and -not $NoObsidian) {
+                New-Item -ItemType Directory -Force $Vault, $TodoDir | Out-Null
 
-            # neuer Vault: Obsidian erkennt den Ordner an .obsidian und kennt ihn ueber obsidian.json
-            if ($NewVault) { New-Item -ItemType Directory -Force (Join-Path $Vault '.obsidian') | Out-Null }
-            $cfgFile = Join-Path $env:APPDATA 'obsidian\obsidian.json'
-            $cfg = Get-ObsidianConfig
-            if (-not $cfg) { $cfg = [pscustomobject]@{ vaults = [pscustomobject]@{} } }
-            if (-not $cfg.vaults) { $cfg | Add-Member vaults ([pscustomobject]@{}) -Force }
-            $known = $cfg.vaults.PSObject.Properties.Value | Where-Object { $_.path -and ($_.path.TrimEnd('\') -eq $Vault.TrimEnd('\')) }
-            if (-not $known) {
-                $id = -join ((1..16) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
-                $ts = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
-                $cfg.vaults | Add-Member $id ([pscustomobject]@{ path = $Vault.TrimEnd('\'); ts = $ts })
-                New-Item -ItemType Directory -Force (Split-Path $cfgFile) | Out-Null
-                [IO.File]::WriteAllText($cfgFile, ($cfg | ConvertTo-Json -Depth 10 -Compress), (New-Object Text.UTF8Encoding($false)))
-                Log "Vault registriert: $Vault"
+                # neuer Vault: Obsidian erkennt den Ordner an .obsidian und kennt ihn ueber obsidian.json
+                if ($NewVault) { New-Item -ItemType Directory -Force (Join-Path $Vault '.obsidian') | Out-Null }
+                $cfgFile = Join-Path $env:APPDATA 'obsidian\obsidian.json'
+                $cfg = Get-ObsidianConfig
+                if (-not $cfg) { $cfg = [pscustomobject]@{ vaults = [pscustomobject]@{} } }
+                if (-not $cfg.vaults) { $cfg | Add-Member vaults ([pscustomobject]@{}) -Force }
+                $known = $cfg.vaults.PSObject.Properties.Value | Where-Object { $_.path -and ($_.path.TrimEnd('\') -eq $Vault.TrimEnd('\')) }
+                if (-not $known) {
+                    $id = -join ((1..16) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
+                    $ts = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
+                    $cfg.vaults | Add-Member $id ([pscustomobject]@{ path = $Vault.TrimEnd('\'); ts = $ts })
+                    New-Item -ItemType Directory -Force (Split-Path $cfgFile) | Out-Null
+                    [IO.File]::WriteAllText($cfgFile, ($cfg | ConvertTo-Json -Depth 10 -Compress), (New-Object Text.UTF8Encoding($false)))
+                    Log "Vault registriert: $Vault"
+                }
             }
-
-            # Todo-Dateien nur anlegen, wenn es sie noch nicht gibt
-            $todo = Join-Path $TodoDir 'Todo.md'
-            # im Einstellungen-Fenster gewaehlte Datei mit anderem Namen (choose-todo.ps1) behalten
-            $chosen = (Get-ItemProperty 'HKCU:\Software\TaskBoard' -Name TodoFile -ErrorAction SilentlyContinue).TodoFile
-            if ($chosen -and ((Split-Path $chosen) -eq $TodoDir.TrimEnd('\'))) { $todo = $chosen }
-            $archive = Join-Path $TodoDir 'Todo-Archiv.md'
-            $utf8 = New-Object Text.UTF8Encoding($false)
-            if (-not (Test-Path -LiteralPath $todo)) { [IO.File]::WriteAllText($todo, "# Todo`n`n- [ ] Mein erster Punkt`n", $utf8) }
-            if (-not (Test-Path -LiteralPath $archive)) { [IO.File]::WriteAllText($archive, "# Todo-Archiv`n", $utf8) }
 
             # schon eingerichtet (Update)? settings.inc gibt es seit 1.0.0
             $wasInstalled = Test-Path -LiteralPath (Join-Path $res 'settings.inc')
-            # settings.inc: alle benutzerabhaengigen Werte fuer den Skin (UTF-16 LE wie alle Rainmeter-Dateien)
-            $vaultName = Split-Path $Vault.TrimEnd('\') -Leaf
-            $inc = "[Variables]`r`nTodoFile=$todo`r`nArchiveFile=$archive`r`nVaultName=$vaultName`r`nTodoUrl=$(Url $todo)`r`nArchiveUrl=$(Url $archive)`r`n"
-            [IO.File]::WriteAllText((Join-Path $res 'settings.inc'), $inc, [Text.Encoding]::Unicode)
-            # eigene Einstellungen (Breite) - nur anlegen, nie ueberschreiben
             $prefs = Join-Path $res 'prefs.inc'
+            $utf8 = New-Object Text.UTF8Encoding($false)
+            # "Nur Google" (Obsidian aus): beim Neuinstallieren gewaehlt (-NoObsidian) oder spaeter im Zahnrad (prefs.inc)
+            $obsidianOff = $NoObsidian -or ((Test-Path -LiteralPath $prefs) -and
+                (Select-String -LiteralPath $prefs -Encoding Unicode -Pattern '^\s*ObsidianOn\s*=\s*0\s*$' -Quiet))
+            if (-not $obsidianOff) {
+                # Todo-Dateien nur anlegen, wenn es sie noch nicht gibt
+                $todo = Join-Path $TodoDir 'Todo.md'
+                # im Einstellungen-Fenster gewaehlte Datei mit anderem Namen (choose-todo.ps1) behalten
+                $chosen = (Get-ItemProperty 'HKCU:\Software\TaskBoard' -Name TodoFile -ErrorAction SilentlyContinue).TodoFile
+                if ($chosen -and ((Split-Path $chosen) -eq $TodoDir.TrimEnd('\'))) { $todo = $chosen }
+                $archive = Join-Path $TodoDir 'Todo-Archiv.md'
+                if (-not (Test-Path -LiteralPath $todo)) { [IO.File]::WriteAllText($todo, "# Todo`n`n- [ ] Mein erster Eintrag`n", $utf8) }
+                if (-not (Test-Path -LiteralPath $archive)) { [IO.File]::WriteAllText($archive, "# Todo-Archiv`n", $utf8) }
+                # settings.inc: alle benutzerabhaengigen Werte fuer den Skin (UTF-16 LE wie alle Rainmeter-Dateien)
+                $vaultName = Split-Path $Vault.TrimEnd('\') -Leaf
+                $inc = "[Variables]`r`nTodoFile=$todo`r`nArchiveFile=$archive`r`nVaultName=$vaultName`r`nTodoUrl=$(Url $todo)`r`nArchiveUrl=$(Url $archive)`r`n"
+                [IO.File]::WriteAllText((Join-Path $res 'settings.inc'), $inc, [Text.Encoding]::Unicode)
+            } else {
+                # Liste liest die Kopie auf diesem PC (der Abgleich fuellt sie aus Google)
+                $local = Join-Path $env:LOCALAPPDATA 'TaskBoard'
+                New-Item -ItemType Directory -Force $local | Out-Null
+                $todo = Join-Path $local 'Todo.md'; $archive = Join-Path $local 'Todo-Archiv.md'
+                if (-not (Test-Path -LiteralPath $todo)) { [IO.File]::WriteAllText($todo, "# Todo`n", $utf8) }
+                if (-not (Test-Path -LiteralPath $archive)) { [IO.File]::WriteAllText($archive, '', $utf8) }
+                if ($NoObsidian -or -not $wasInstalled) {
+                    $inc = "[Variables]`r`nTodoFile=$todo`r`nArchiveFile=$archive`r`nVaultName=`r`nTodoUrl=`r`nArchiveUrl=`r`nTodoOpen=https://tasks.google.com/`r`nTodoOpenTip=Google Tasks öffnen`r`nArchiveOpen=$archive`r`n"
+                    [IO.File]::WriteAllText((Join-Path $res 'settings.inc'), $inc, [Text.Encoding]::Unicode)
+                }
+                Log "Nur Google: $todo"
+            }
+            # eigene Einstellungen (Breite) - nur anlegen, nie ueberschreiben
             if (-not (Test-Path -LiteralPath $prefs)) { [IO.File]::WriteAllText($prefs, "[Variables]`r`n", [Text.Encoding]::Unicode) }
+            # Google-Liste aus dem Setup (Anmeldung schon erledigt, Schluessel liegt in %LOCALAPPDATA%\TaskBoard)
+            if ($GoogleList) {
+                $g = [ordered]@{ GoogleOn = '1'; GoogleList = $GoogleList; GoogleListName = $GoogleListName }
+                if ($NoObsidian) { $g.ObsidianOn = '0' }
+                Set-IniSection $prefs 'Variables' $g
+                Log "Google-Liste: $GoogleList"
+            }
             # Update von vor 1.2.0: Liste blieb bisher auf dem Desktop -> dort lassen (nur Neuinstallationen starten
             # mit der Seitenleiste). Wer schon eine Anzeige gewaehlt hat, behaelt sie.
             if ($wasInstalled -and -not (Select-String -LiteralPath $prefs -Encoding Unicode -Pattern '^\s*Mode\s*=' -Quiet)) {

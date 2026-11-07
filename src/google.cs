@@ -26,6 +26,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
+using System.Windows.Forms;
 
 // ---------- JSON (JavaScriptSerializer aus .NET 4) ----------
 static class GJson
@@ -1100,8 +1101,14 @@ class GoogleSync
         st.Pending.Clear();
         st.Order = doc.Blocks().Where(b => b.Head.Id != null).Select(b => b.Head.Id).ToList();
         st.Save(StatePath);
+        Written = c1;
+        Changed = c1 != c0;
         return true;
     }
+
+    public string Written;      // Inhalt der Datei nach dem Abgleich (der Dateiwaechter ignoriert eigenes Schreiben)
+    public bool Changed;
+    public int Activity { get { return nCreated + nPatched + nDeleted + nPulled + nAdded + nArchived + nMoved + nReordered; } }
 
     void Register(TItem it)
     {
@@ -1392,6 +1399,8 @@ class GoogleSync
         InsertOrder(parentId ?? "", r.Id, prev);
         st.Items[r.Id] = new SyncState.Entry { P = it.P.Clone(), Parent = parentId ?? "" };
         st.Pending[r.Id] = Fmt.StripMarker(it.Text);
+        // sofort merken: wird das Programm jetzt beendet (Update, Kuerzel neu), wird der Eintrag trotzdem wiedererkannt
+        try { SavePendingOnly(); } catch { }
         nCreated++;
     }
 
@@ -1505,6 +1514,410 @@ class GoogleSync
     }
 }
 
+// ---------- Einstellungen der Liste (Dateien in @Resources, UTF-16 LE wie bei Rainmeter) ----------
+static class SkinIni
+{
+    public static Dictionary<string, string> Read(string path)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            if (!File.Exists(path)) return d;
+            foreach (string line in File.ReadAllLines(path))      // erkennt UTF-16 und UTF-8 am BOM
+            {
+                int i = line.IndexOf('=');
+                if (i <= 0) continue;
+                string k = line.Substring(0, i).Trim();
+                if (k.StartsWith(";") || k.StartsWith("[")) continue;
+                d[k] = line.Substring(i + 1).Trim().Trim('"');
+            }
+        }
+        catch { }
+        return d;
+    }
+
+    public static string Get(Dictionary<string, string> d, string k, string def)
+    {
+        string v;
+        return d.TryGetValue(k, out v) ? v : def;
+    }
+
+    // Werte setzen (vorhandene Zeilen ersetzen, neue anhaengen)
+    public static void Set(string path, Dictionary<string, string> values)
+    {
+        var lines = File.Exists(path) ? File.ReadAllLines(path).ToList() : new List<string> { "[Variables]" };
+        foreach (var kv in values)
+        {
+            string key = kv.Key;
+            int idx = lines.FindIndex(l => { int i = l.IndexOf('='); return i > 0 && string.Equals(l.Substring(0, i).Trim(), key, StringComparison.OrdinalIgnoreCase); });
+            string nl = kv.Key + "=" + kv.Value;
+            if (idx >= 0) lines[idx] = nl; else lines.Add(nl);
+        }
+        while (lines.Count > 0 && lines[lines.Count - 1].Trim() == "") lines.RemoveAt(lines.Count - 1);
+        File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n", Encoding.Unicode);
+    }
+}
+
+// aktuelle Einstellung (prefs.inc: GoogleOn, GoogleList, GoogleListName, ObsidianOn; settings.inc: Dateien)
+class GConf
+{
+    public string Res;
+    public bool GoogleOn, ObsidianOn;
+    public string ListId = "", ListName = "", TodoFile = "", ArchiveFile = "";
+
+    public string Prefs { get { return Path.Combine(Res, "prefs.inc"); } }
+    public string Settings { get { return Path.Combine(Res, "settings.inc"); } }
+
+    public static GConf Load(string res)
+    {
+        var c = new GConf { Res = res };
+        var p = SkinIni.Read(c.Prefs);
+        var s = SkinIni.Read(c.Settings);
+        c.GoogleOn = SkinIni.Get(p, "GoogleOn", "0") == "1";
+        c.ObsidianOn = SkinIni.Get(p, "ObsidianOn", "1") != "0";
+        c.ListId = SkinIni.Get(p, "GoogleList", "");
+        c.ListName = SkinIni.Get(p, "GoogleListName", "");
+        c.TodoFile = SkinIni.Get(s, "TodoFile", "");
+        c.ArchiveFile = SkinIni.Get(s, "ArchiveFile", "");
+        return c;
+    }
+
+    // "Nur Google": die Liste liest eine Kopie auf diesem PC
+    public static string LocalTodo { get { return Path.Combine(GLog.StateDir(), "Todo.md"); } }
+    public static string LocalArchive { get { return Path.Combine(GLog.StateDir(), "Todo-Archiv.md"); } }
+    public static string StatePath { get { return Path.Combine(GLog.StateDir(), "google-sync.json"); } }
+
+    // settings.inc fuer die Liste schreiben. Ohne Obsidian: Titel oeffnet Google Tasks im Browser.
+    public void WriteSettings(string todo, string archive, string vaultName, bool obsidian)
+    {
+        string inc = "[Variables]\r\nTodoFile=" + todo + "\r\nArchiveFile=" + archive + "\r\nVaultName=" + vaultName + "\r\n";
+        if (obsidian) inc += "TodoUrl=" + Uri.EscapeDataString(todo) + "\r\nArchiveUrl=" + Uri.EscapeDataString(archive) + "\r\n";
+        else inc += "TodoUrl=\r\nArchiveUrl=\r\nTodoOpen=https://tasks.google.com/\r\nArchiveOpen=" + archive + "\r\n";
+        File.WriteAllText(Settings, inc, Encoding.Unicode);
+    }
+}
+
+// Zustand fuers Einstellungen-Fenster: google-status.inc (GoogleState, GoogleStatus, GoogleConnected)
+static class GStatus
+{
+    public static void Write(string res, string state, string text, bool connected)
+    {
+        try
+        {
+            string path = Path.Combine(res, "google-status.inc");
+            string content = "[Variables]\r\nGoogleState=" + state + "\r\nGoogleStatus=" + text.Replace("\r", " ").Replace("\n", " ") +
+                "\r\nGoogleConnected=" + (connected ? "1" : "0") + "\r\n";
+            if (File.Exists(path) && File.ReadAllText(path) == content) return;
+            File.WriteAllText(path, content, Encoding.Unicode);
+            // dasselbe als UTF-8 fuer settings.lua (liest den Stand alle 2 Sekunden, ohne Neuladen)
+            File.WriteAllText(Path.Combine(res, "google-status.txt"), state + "\n" + (connected ? "1" : "0") + "\n" + text, new UTF8Encoding(false));
+        }
+        catch { }
+    }
+
+    // den laufenden Abgleich (TaskBoardHotkey.exe im Hintergrund) sofort anstossen
+    public static void Poke()
+    {
+        try
+        {
+            EventWaitHandle ev;
+            if (EventWaitHandle.TryOpenExisting("TaskBoardGoogleSyncNow", out ev)) { ev.Set(); ev.Dispose(); }
+        }
+        catch { }
+    }
+}
+
+// ---------- Abgleich im Hintergrund (laeuft im TaskBoardHotkey-Prozess) ----------
+// Nach jeder Aenderung an der Todo.md (Liste, Obsidian, Claude) nach 1,5 s, sonst alle 2 Minuten.
+// Google erlaubt dem ganzen Projekt 50.000 Anfragen pro Tag; ein ruhiger Durchlauf kostet eine.
+class GoogleBackground
+{
+    readonly string res;
+    readonly AutoResetEvent wake = new AutoResetEvent(false);
+    FileSystemWatcher watcher;
+    string watched;
+    volatile string lastWritten;
+
+    GoogleBackground(string res) { this.res = res; }
+
+    public static void Start(string res)
+    {
+        var b = new GoogleBackground(res);
+        var t = new Thread(b.Loop) { IsBackground = true, Name = "TaskBoardGoogleSync" };
+        t.Start();
+    }
+
+    void Loop()
+    {
+        try { GLog.Dir = GLog.StateDir(); } catch { }
+        EventWaitHandle poke;
+        try { poke = new EventWaitHandle(false, EventResetMode.AutoReset, "TaskBoardGoogleSyncNow"); }
+        catch { poke = new EventWaitHandle(false, EventResetMode.AutoReset); }
+        GoogleAuth auth = null;
+        DateTime tokenStamp = DateTime.MinValue;
+        int failures = 0;
+        string lastOk = null;
+        while (true)
+        {
+            int waitMs = 300000;
+            try
+            {
+                GConf c = GConf.Load(res);
+                string tokenFile = Path.Combine(GLog.StateDir(), "google-token.bin");
+                DateTime stamp = File.Exists(tokenFile) ? File.GetLastWriteTimeUtc(tokenFile) : DateTime.MinValue;
+                if (auth == null || stamp != tokenStamp) { auth = GoogleAuth.Load(res, GLog.StateDir()); tokenStamp = stamp; }
+                bool connected = auth != null && auth.Connected;
+                if (!c.GoogleOn || c.ListId == "" || auth == null)
+                {
+                    Watch(null);
+                    GStatus.Write(res, "aus", connected ? "Abgleich mit Google ist ausgeschaltet." : "Nicht mit Google verbunden.", connected);
+                }
+                else if (!connected)
+                {
+                    Watch(null);
+                    GStatus.Write(res, "abgemeldet", "Google-Zugang abgelaufen oder entfernt – bitte neu verbinden.", false);
+                }
+                else
+                {
+                    Watch(c.TodoFile);
+                    var s = new GoogleSync
+                    {
+                        TodoPath = c.TodoFile, ArchivePath = c.ArchiveFile, ListId = c.ListId, StatePath = GConf.StatePath,
+                        CreateIfMissing = !c.ObsidianOn, Api = new TasksApi(auth)
+                    };
+                    bool ok = s.Run();
+                    if (ok)
+                    {
+                        lastWritten = s.Written;
+                        failures = 0;
+                        lastOk = DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture);
+                        if (s.Activity > 0) GLog.Write("Abgleich: " + s.Summary + " (" + s.Api.Calls + " Anfragen)");
+                        GStatus.Write(res, "ok", "Verbunden · Liste „" + c.ListName + "“ · zuletzt abgeglichen " + lastOk, true);
+                        waitMs = 120000;
+                    }
+                    else { failures++; waitMs = 20000; }      // z. B. Datei gerade geaendert: bald nochmal
+                }
+            }
+            catch (GoogleException e)
+            {
+                failures++;
+                bool offline = e.Code == 0;
+                if (!offline) GLog.Write("Abgleich: " + e.Message);
+                string when = lastOk != null ? " (zuletzt abgeglichen " + lastOk + ")" : "";
+                if (e.Code == 401) GStatus.Write(res, "abgemeldet", "Google-Zugang abgelaufen oder entfernt – bitte neu verbinden.", false);
+                else if (e.Code == 404) GStatus.Write(res, "fehler", "Die Google-Liste gibt es nicht mehr – bitte eine Liste wählen.", true);
+                else GStatus.Write(res, offline ? "offline" : "fehler", (offline ? "Keine Verbindung zu Google – wird nachgeholt" : "Fehler bei Google – wird nochmal versucht") + when, true);
+                waitMs = Math.Min(600000, 30000 * (1 << Math.Min(failures, 4)));
+            }
+            catch (Exception e)
+            {
+                failures++;
+                GLog.Write("Abgleich: " + e);
+                GStatus.Write(res, "fehler", "Fehler beim Abgleich – wird nochmal versucht (Details: google.log).", true);
+                waitMs = Math.Min(600000, 30000 * (1 << Math.Min(failures, 4)));
+            }
+            WaitHandle.WaitAny(new WaitHandle[] { wake, poke }, waitMs);
+            // kurz warten, bis Aenderungen ruhen (Obsidian speichert oft in mehreren Schritten)
+            Thread.Sleep(1500);
+            wake.Reset();
+        }
+    }
+
+    void Watch(string file)
+    {
+        if (file == watched) return;
+        if (watcher != null) { watcher.EnableRaisingEvents = false; watcher.Dispose(); watcher = null; }
+        watched = file;
+        if (string.IsNullOrEmpty(file)) return;
+        try
+        {
+            string dir = Path.GetDirectoryName(file);
+            if (!Directory.Exists(dir)) return;
+            watcher = new FileSystemWatcher(dir, Path.GetFileName(file)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size };
+            FileSystemEventHandler h = delegate { OnFileEvent(); };
+            watcher.Changed += h;
+            watcher.Created += h;
+            watcher.Renamed += delegate { OnFileEvent(); };
+            watcher.EnableRaisingEvents = true;
+        }
+        catch (Exception e) { GLog.Write("Dateiwaechter: " + e.Message); }
+    }
+
+    void OnFileEvent()
+    {
+        try
+        {
+            string now = GoogleSync.ReadText(watched);
+            if (now != null && now == lastWritten) return;       // eigenes Schreiben
+        }
+        catch { }
+        wake.Set();
+    }
+
+    // laeuft der Abgleich ueberhaupt? (fuer TaskBoardHotkey: Prozess am Leben halten)
+    public static bool Wanted(string res) { return GConf.Load(res).GoogleOn; }
+}
+
+// ---------- Auswahl der Google-Liste (kleines dunkles Fenster) ----------
+class ListPicker : Form
+{
+    readonly List<RadioButton> radios = new List<RadioButton>();
+    readonly List<string[]> lists;
+    public string Id, Name2;
+
+    ListPicker(List<string[]> lists, string current)
+    {
+        this.lists = lists;
+        Text = "Task Board – Google-Liste";
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false; MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterScreen;
+        TopMost = true;
+        BackColor = System.Drawing.Color.FromArgb(28, 26, 34);
+        ForeColor = System.Drawing.Color.FromArgb(236, 233, 241);
+        Font = new System.Drawing.Font("Segoe UI", 11f);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        int y = 18;
+        var head = new Label { Text = "In welcher Google-Liste sollen deine Aufgaben liegen?", AutoSize = true, Left = 20, Top = y };
+        Controls.Add(head);
+        y += 40;
+        bool any = false;
+        foreach (string[] l in lists)
+        {
+            var rb = new RadioButton { Text = l[1], AutoSize = true, Left = 26, Top = y, Tag = l[0] };
+            if (l[0] == current || (current == "" && l[1] == "Task Board")) { rb.Checked = true; any = true; }
+            radios.Add(rb); Controls.Add(rb);
+            y += 32;
+        }
+        bool haveTb = lists.Any(l => l[1] == "Task Board");
+        var nw = new RadioButton { Text = haveTb ? "Neue Liste anlegen: „Task Board (neu)“" : "Neue Liste anlegen: „Task Board“", AutoSize = true, Left = 26, Top = y, Tag = "" };
+        if (!any) nw.Checked = true;
+        radios.Add(nw); Controls.Add(nw);
+        y += 44;
+        var note = new Label { Text = "Andere Listen in deinem Google-Konto bleiben unberührt.", AutoSize = true, Left = 20, Top = y, ForeColor = System.Drawing.Color.FromArgb(175, 175, 188) };
+        note.Font = new System.Drawing.Font("Segoe UI", 9.5f);
+        Controls.Add(note);
+        y += 36;
+        var ok = new Button { Text = "Übernehmen", Width = 130, Height = 36, Left = 20, Top = y, FlatStyle = FlatStyle.Flat, BackColor = System.Drawing.Color.FromArgb(220, 80, 165), ForeColor = System.Drawing.Color.White };
+        ok.FlatAppearance.BorderSize = 0;
+        var cancel = new Button { Text = "Abbrechen", Width = 120, Height = 36, Left = 160, Top = y, FlatStyle = FlatStyle.Flat, BackColor = System.Drawing.Color.FromArgb(45, 42, 54), ForeColor = ForeColor };
+        cancel.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(80, 76, 92);
+        ok.Click += delegate { Choose(); };
+        cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+        Controls.Add(ok); Controls.Add(cancel);
+        AcceptButton = ok; CancelButton = cancel;
+        ClientSize = new System.Drawing.Size(Math.Max(520, head.PreferredWidth + 40), y + 56);
+    }
+
+    void Choose()
+    {
+        RadioButton rb = radios.FirstOrDefault(r => r.Checked);
+        if (rb == null) return;
+        Id = (string)rb.Tag;
+        Name2 = Id == "" ? "" : rb.Text;
+        DialogResult = DialogResult.OK;
+        Close();
+    }
+
+    // gewaehlte Liste {id, name}; neue Liste wird hier angelegt; null = abgebrochen
+    public static string[] Pick(TasksApi api, string current)
+    {
+        var lists = api.Lists().Select(l => new[] { GJson.Str(l, "id"), GJson.Str(l, "title") ?? "" }).ToList();
+        using (var f = new ListPicker(lists, current ?? ""))
+        {
+            if (f.ShowDialog() != DialogResult.OK) return null;
+            if (f.Id != "") return new[] { f.Id, f.Name2 };
+            string title = lists.Any(l => l[1] == "Task Board") ? "Task Board (neu)" : "Task Board";
+            var created = api.NewList(title);
+            return new[] { GJson.Str(created, "id"), title };
+        }
+    }
+}
+
+// ---------- Umschalten: Obsidian an/aus (nur Google = Kopie auf diesem PC) ----------
+static class StoreSwitch
+{
+    // "google": Obsidian aus. Die Liste liest ab jetzt %LOCALAPPDATA%\TaskBoard\Todo.md (Kopie des bisherigen Inhalts).
+    // "obsidian": Obsidian an. Die Kopie kommt zurueck in die Todo.md im Vault (alte Fassung wird vorher gesichert).
+    public static string Switch(string res, string to)
+    {
+        GConf c = GConf.Load(res);
+        string localTodo = GConf.LocalTodo, localArchive = GConf.LocalArchive;
+        var prefs = SkinIni.Read(c.Prefs);
+        if (to == "google")
+        {
+            if (!c.ObsidianOn) return "ok";
+            if (!c.GoogleOn) return "fehler: erst mit Google verbinden";
+            string src = GoogleSync.ReadText(c.TodoFile);
+            if (src != null) GoogleSync.WriteText(localTodo, src);
+            else if (!File.Exists(localTodo)) GoogleSync.WriteText(localTodo, "# Todo\n");
+            if (!File.Exists(localArchive)) GoogleSync.WriteText(localArchive, "");
+            SkinIni.Set(c.Prefs, new Dictionary<string, string> { { "ObsidianOn", "0" }, { "VaultTodoFile", c.TodoFile }, { "VaultArchiveFile", c.ArchiveFile } });
+            c.WriteSettings(localTodo, localArchive, SkinIni.Get(SkinIni.Read(c.Settings), "VaultName", ""), false);
+            MoveState(localTodo);
+            return "ok";
+        }
+        // zurueck zu Obsidian
+        if (c.ObsidianOn) return "ok";
+        string todo = SkinIni.Get(prefs, "VaultTodoFile", ""), archive = SkinIni.Get(prefs, "VaultArchiveFile", "");
+        if (todo == "")
+        {
+            try { todo = (string)Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\TaskBoard", "TodoFile", "") ?? ""; } catch { }
+            if (todo == "")
+            {
+                string dir = null;
+                try { dir = (string)Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\TaskBoard", "TodoDir", null); } catch { }
+                if (dir != null) todo = Path.Combine(dir, "Todo.md");
+            }
+        }
+        if (todo == "") return "kein-vault";
+        if (archive == "") archive = Path.Combine(Path.GetDirectoryName(todo), "Todo-Archiv.md");
+        string cur = GoogleSync.ReadText(localTodo);
+        if (cur != null)
+        {
+            string old = GoogleSync.ReadText(todo);
+            if (old != null && old != cur)
+            {
+                string bak = Path.Combine(GLog.StateDir(), "Sicherung");
+                Directory.CreateDirectory(bak);
+                GoogleSync.WriteText(Path.Combine(bak, "Todo-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".md"), old);
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(todo));
+            GoogleSync.WriteText(todo, cur);
+        }
+        // Archiv der Kopie an das Archiv im Vault anhaengen
+        string la = GoogleSync.ReadText(localArchive);
+        if (!string.IsNullOrEmpty(la) && la.Trim() != "")
+        {
+            var blocks = new List<List<string>>();
+            foreach (string l in la.Replace("\r\n", "\n").Split('\n'))
+                if (Fmt.Check.IsMatch(l) || Regex.IsMatch(l, @"^\s*[-*+] \[-\]")) blocks.Add(new List<string> { l });
+                else if (blocks.Count > 0 && l.Trim() != "" && l.StartsWith(" ")) blocks[blocks.Count - 1].Add(l);
+            if (blocks.Count > 0) GoogleSync.WriteText(archive, Fmt.AppendArchive(GoogleSync.ReadText(archive), blocks));
+            GoogleSync.WriteText(localArchive, "");
+        }
+        string vault = Path.GetDirectoryName(todo);
+        for (string p = vault; p != null; p = Path.GetDirectoryName(p)) if (Directory.Exists(Path.Combine(p, ".obsidian"))) { vault = p; break; }
+        SkinIni.Set(c.Prefs, new Dictionary<string, string> { { "ObsidianOn", "1" } });
+        c.WriteSettings(todo, archive, Path.GetFileName(vault.TrimEnd('\\')), true);
+        MoveState(todo);
+        return "ok";
+    }
+
+    // gemeinsamer Stand gilt fuer die neue Datei weiter (gleicher Inhalt) - sonst begaenne der Abgleich neu
+    static void MoveState(string todo)
+    {
+        try
+        {
+            if (!File.Exists(GConf.StatePath)) return;
+            var s = SyncState.Load(GConf.StatePath);
+            s.Todo = todo;
+            s.Save(GConf.StatePath);
+        }
+        catch { }
+    }
+}
+
 // ---------- Kommandozeile (Setup, Einstellungen, Tests) ----------
 //   --google-login                 Browser oeffnen, anmelden; "ok" oder "fehler: …"
 //   --google-logout                Verbindung trennen (bei Google widerrufen, Schluessel loeschen)
@@ -1522,6 +1935,9 @@ static class GoogleCli
         try { Console.OutputEncoding = new UTF8Encoding(false); } catch { }
         GLog.Dir = GLog.StateDir();
         GLog.Echo = Environment.GetEnvironmentVariable("TASKBOARD_GOOGLE_ECHO") == "1";
+        if (args[0] == "--google-sync-now") { GStatus.Poke(); return 0; }
+        // Test: nur den Hintergrund-Abgleich laufen lassen (ohne Tastenkuerzel), <Sekunden> lang
+        if (args[0] == "--google-background") { GoogleBackground.Start(exeDir); Thread.Sleep(1000 * (args.Length > 1 ? int.Parse(args[1]) : 60)); return 0; }
         GoogleAuth auth = GoogleAuth.Load(exeDir, GLog.Dir);
         if (auth == null) { Out("fehler: google-client.json fehlt"); return 2; }
         var api = new TasksApi(auth);
@@ -1529,6 +1945,54 @@ static class GoogleCli
         {
             switch (args[0])
             {
+                // Einstellungen: anmelden + Liste waehlen + einschalten. Setup: "--google-connect --out <datei>"
+                // schreibt nur "id\tname" in die Datei (die Einstellungen schreibt dann das Setup).
+                case "--google-connect":
+                {
+                    string outFile = args.Length > 2 && args[1] == "--out" ? args[2] : null;
+                    if (!auth.Connected || outFile != null)
+                    {
+                        if (!auth.Login(300))
+                        {
+                            GLog.Write("Anmeldung fehlgeschlagen: " + auth.LastError);
+                            if (outFile == null) GStatus.Write(exeDir, "aus", "Nicht verbunden: " + auth.LastError, false);
+                            Out("fehler: " + auth.LastError);
+                            return 1;
+                        }
+                        GLog.Write("angemeldet");
+                    }
+                    string current = outFile == null ? SkinIni.Get(SkinIni.Read(Path.Combine(exeDir, "prefs.inc")), "GoogleList", "") : "";
+                    string[] pick = ListPicker.Pick(api, current);
+                    if (pick == null) { Out("abgebrochen"); if (outFile == null) GStatus.Write(exeDir, "aus", "Verbunden, aber noch keine Liste gewählt.", true); return 1; }
+                    if (outFile != null) { File.WriteAllText(outFile, pick[0] + "\t" + pick[1], new UTF8Encoding(true)); Out("ok"); return 0; }
+                    return TurnOn(exeDir, pick);
+                }
+                case "--google-pick-list":
+                {
+                    string current = SkinIni.Get(SkinIni.Read(Path.Combine(exeDir, "prefs.inc")), "GoogleList", "");
+                    string[] pick = ListPicker.Pick(api, current);
+                    if (pick == null) { Out("abgebrochen"); return 1; }
+                    return TurnOn(exeDir, pick);
+                }
+                case "--google-disconnect":
+                {
+                    auth.Logout();
+                    SkinIni.Set(Path.Combine(exeDir, "prefs.inc"), new Dictionary<string, string> { { "GoogleOn", "0" } });
+                    try { File.Delete(GConf.StatePath); } catch { }
+                    GStatus.Write(exeDir, "aus", "Nicht mit Google verbunden.", false);
+                    GLog.Write("Verbindung getrennt");
+                    GStatus.Poke();
+                    Out("ok");
+                    return 0;
+                }
+                case "--google-store":
+                {
+                    string r = StoreSwitch.Switch(exeDir, args.Length > 1 ? args[1] : "");
+                    GLog.Write("Speicherort: " + (args.Length > 1 ? args[1] : "?") + " -> " + r);
+                    GStatus.Poke();
+                    Out(r);
+                    return r == "ok" ? 0 : 1;
+                }
                 case "--google-login":
                     if (auth.Login(300)) { GLog.Write("angemeldet"); Out("ok"); return 0; }
                     GLog.Write("Anmeldung fehlgeschlagen: " + auth.LastError);
@@ -1588,5 +2052,16 @@ static class GoogleCli
         catch (Exception e) { GLog.Write("Fehler: " + e); Out("fehler: " + e.Message); return 1; }
         Out("unbekannter Befehl");
         return 2;
+    }
+
+    // Liste merken und Abgleich einschalten (neue Liste = neuer gemeinsamer Stand)
+    static int TurnOn(string res, string[] pick)
+    {
+        SkinIni.Set(Path.Combine(res, "prefs.inc"), new Dictionary<string, string> { { "GoogleOn", "1" }, { "GoogleList", pick[0] }, { "GoogleListName", pick[1] } });
+        GStatus.Write(res, "ok", "Verbunden · Liste „" + pick[1] + "“ · wird abgeglichen …", true);
+        GLog.Write("Liste gewaehlt: " + pick[0]);
+        GStatus.Poke();
+        Out("ok");
+        return 0;
     }
 }

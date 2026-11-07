@@ -121,9 +121,113 @@ local function render()
 	SKIN:Bang('!Redraw')
 end
 
+-- ---------- Speichern in: Obsidian / Google Tasks (Haekchen; mindestens eins an) ----------
+-- Den Rest erledigt TaskBoardHotkey.exe (google.cs): --google-connect | --google-pick-list | --google-disconnect |
+-- --google-store google|obsidian. Den Stand schreibt es nach google-status.txt (Zustand, verbunden, Text).
+local gState, gConnected, gText, gStamp = 'aus', false, '', nil
+local busy = false
+local lastPoll = 0
+
+local function readStatus()
+	local fh = io.open(SKIN:GetVariable('@') .. 'google-status.txt', 'rb')
+	if not fh then return false end
+	local c = fh:read('*a')
+	fh:close()
+	if c == gStamp then return false end
+	gStamp = c
+	local st, conn, text = c:match('^([^\n]*)\n([^\n]*)\n(.*)$')
+	if st then gState, gConnected, gText = st, conn == '1', text end
+	return true
+end
+
+local function storeView()
+	local obs = SKIN:GetVariable('ObsidianOn') ~= '0'
+	local goo = SKIN:GetVariable('GoogleOn') == '1'
+	set('StoreObsText', 'Text', (obs and '✓ ' or '') .. 'Obsidian')
+	set('StoreGoogleText', 'Text', (goo and '✓ ' or '') .. 'Google Tasks')
+	set('FileNow', 'Text', obs and (SKIN:GetVariable('TodoFile') or '') or 'Nur bei Google gespeichert (mit einer Kopie auf diesem PC).')
+	show('File1', obs); show('File1Text', obs)
+	if not busy then set('GoogleInfo', 'Text', gText ~= '' and gText or 'Nicht mit Google verbunden.') end
+	show('GList', gConnected); show('GListText', gConnected)
+	show('GOff', gConnected); show('GOffText', gConnected)
+	SKIN:Bang('!UpdateMeter', '*')
+	SKIN:Bang('!Redraw')
+end
+
+local function info(text)
+	set('GoogleInfo', 'Text', text)
+	SKIN:Bang('!UpdateMeter', 'GoogleInfo')
+	SKIN:Bang('!Redraw')
+end
+
+local function runGoogle(args, text)
+	busy = true
+	info(text)
+	SKIN:Bang('!SetOption', 'MeasureGoogle', 'Parameter', args)
+	SKIN:Bang('!UpdateMeasure', 'MeasureGoogle')
+	SKIN:Bang('!CommandMeasure', 'MeasureGoogle', 'Run')
+end
+
+local function poke()
+	SKIN:Bang('["' .. SKIN:GetVariable('@') .. 'TaskBoardHotkey.exe" --google-sync-now]')
+end
+
+local function reloadAll()
+	SKIN:Bang('!Refresh', 'TaskBoard')
+	SKIN:Bang('!Refresh', 'TaskBoard\\Formular')
+	SKIN:Bang('!Refresh')
+end
+
+function Store(which)
+	readStatus()
+	local obs = SKIN:GetVariable('ObsidianOn') ~= '0'
+	local goo = SKIN:GetVariable('GoogleOn') == '1'
+	if which == 'google' then
+		if goo then
+			if not obs then return info('Ohne Google braucht die Liste Obsidian – zuerst „Obsidian“ anhaken.') end
+			SKIN:Bang('!WriteKeyValue', 'Variables', 'GoogleOn', '0', '#@#prefs.inc')
+			poke()
+			reloadAll()
+		elseif gConnected and (SKIN:GetVariable('GoogleList') or '') ~= '' then
+			SKIN:Bang('!WriteKeyValue', 'Variables', 'GoogleOn', '1', '#@#prefs.inc')
+			poke()
+			reloadAll()
+		else
+			runGoogle('--google-connect', 'Dein Browser öffnet sich – bitte bei Google anmelden und Task Board erlauben …')
+		end
+	else
+		if obs then
+			if not goo then return info('Mindestens ein Speicherort muss angehakt sein.') end
+			runGoogle('--google-store google', 'Wird umgestellt …')
+		else
+			runGoogle('--google-store obsidian', 'Wird umgestellt …')
+		end
+	end
+end
+
+function GoogleRun(args)
+	if args == '--google-pick-list' then runGoogle(args, 'Einen Moment – Listen werden geladen …')
+	else runGoogle(args, 'Verbindung wird getrennt …') end
+end
+
+-- TaskBoardHotkey.exe ist fertig
+function GoogleDone()
+	busy = false
+	local out = SKIN:GetMeasure('MeasureGoogle'):GetStringValue() or ''
+	if out:find('kein%-vault') then
+		return info('Es ist noch keine Todo-Datei in Obsidian eingerichtet – bitte „Andere Datei wählen …“ benutzen.')
+	end
+	reloadAll()
+end
+
 function Update()
-	if not drawn then drawn = true; render() end
+	if not drawn then drawn = true; render(); readStatus(); storeView() end
 	keepWatch(adding)
+	local now = os.time()
+	if now - lastPoll >= 2 then
+		lastPoll = now
+		if readStatus() then storeView() end
+	end
 	return 0
 end
 

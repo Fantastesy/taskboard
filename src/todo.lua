@@ -274,9 +274,13 @@ end
 -- Zeitstempel (➕ erstellt, ✅ erledigt): auf dem Desktop und im Textfeld unsichtbar, bleiben beim Bearbeiten erhalten
 local DATE = '%d%d%d%d%-%d%d%-%d%d'
 local function stamp(icon) return ' ' .. icon .. ' ' .. os.date('%Y-%m-%d') end
+-- Kennung der Google-Aufgabe "%%tb:<id>%%" (Google-Abgleich, google.cs): wie die Stempel unsichtbar,
+-- bleibt beim Bearbeiten erhalten, kommt nicht ins Archiv
+local MARKER = '%s*%%%%tb:[%w_=%-]+%%%%'
+local function stripMarker(text) return (text:gsub(MARKER, '')) end
 local function stripStamps(text)
 	for _, icon in ipairs({ createdIcon, doneIcon }) do text = text:gsub('%s*' .. icon .. '%s*' .. DATE, '') end
-	return text
+	return stripMarker(text)
 end
 local function stampsOf(text)
 	local s = ''
@@ -284,6 +288,8 @@ local function stampsOf(text)
 		local d = text:match(icon .. '%s*(' .. DATE .. ')')
 		if d then s = s .. ' ' .. icon .. ' ' .. d end
 	end
+	local id = text:match('%%%%tb:[%w_=%-]+%%%%')
+	if id then s = s .. ' ' .. id end
 	return s
 end
 
@@ -926,7 +932,7 @@ local function blockOf(t, mark)
 	local indent = lines[t.line]:match('^(%s*)')
 	local b = {}
 	for k = t.line, t.last do
-		local line = lines[k]
+		local line = stripMarker(lines[k])
 		if line:sub(1, #indent) == indent then line = line:sub(#indent + 1) end
 		if line:match('%S') then b[#b + 1] = line end
 	end
@@ -949,7 +955,7 @@ local function rollRecurring()
 		local rule = t.done and ruleOf(t.text)
 		if rule then
 			local line = lines[t.line]
-			local copy = line:sub(#line:match('^(%s*)') + 1):gsub(repPattern(), '')
+			local copy = stripMarker(line:sub(#line:match('^(%s*)') + 1):gsub(repPattern(), ''))
 			if not copy:find(doneIcon, 1, true) then copy = copy .. stamp(doneIcon) end
 			blocks[#blocks + 1] = { copy }
 			local nxt = dueIcon .. ' ' .. os.date('%Y-%m-%d', nextDate(dueOf(t.text), RULES[rule] or rule))
@@ -1419,7 +1425,7 @@ function Cleanup()
 			local parent = trim(stripDue(stripStamps(t.text)))
 			for _, sub in ipairs(t.subs) do
 				if sub.done then
-					local line = '- [x] ' .. sub.text
+					local line = '- [x] ' .. stripMarker(sub.text)
 					if not sub.text:find(doneIcon, 1, true) then line = line .. stamp(doneIcon) end
 					blocks[#blocks + 1] = { line .. ' · Unteraufgabe von „' .. parent .. '“' }
 					remove[sub.line] = true
