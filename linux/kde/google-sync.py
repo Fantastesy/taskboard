@@ -2,7 +2,7 @@
 # Google Tasks fuer Task Board unter Linux. Gegenstueck zu src/google.cs (Windows): gleiche Regeln, gleiches Format.
 # Nur Python-Standardbibliothek.
 #
-#   google-sync.py sync                  ein Abgleich (das Widget ruft das nach Aenderungen und alle 2 Minuten auf)
+#   google-sync.py sync                  ein Abgleich (das Widget ruft das nach Aenderungen und alle 30 Sekunden auf)
 #   google-sync.py connect [--out DATEI] anmelden + Liste waehlen + einschalten (--out: nur "id<TAB>name" schreiben, fuers Setup)
 #   google-sync.py pick-list             andere Liste waehlen
 #   google-sync.py disconnect            Verbindung trennen (bei Google widerrufen, Schluessel loeschen)
@@ -224,7 +224,7 @@ class GoogleAuth:
 
     def _save(self, d, refresh):
         """Dauerhaften und aktuellen Schluessel sichern (nur fuer den Nutzer lesbar). Der aktuelle gilt eine Stunde -
-        so holt nicht jeder Abgleich alle 2 Minuten einen neuen."""
+        so holt nicht jeder Abgleich einen neuen."""
         self.access = d.get("access_token")
         self.access_until = time.time() + int(d.get("expires_in", 3600)) - 120
         self.stale = False
@@ -1244,10 +1244,9 @@ class GoogleSync:
             d["notes"] = notes
         elif patch:
             d["notes"] = None
-        if p.due:
-            d["due"] = p.due + "T00:00:00.000Z"
-        elif patch:
-            d["due"] = None
+        # Datum nur schicken, wenn es sich geaendert hat: eine in Googles App gesetzte Uhrzeit soll dabei nicht verloren gehen
+        if p.due != (existing.due if existing is not None else ""):
+            d["due"] = p.due + "T00:00:00.000Z" if p.due else None
         d["status"] = "completed" if p.done else "needsAction"
         if not p.done and patch:
             d["completed"] = None

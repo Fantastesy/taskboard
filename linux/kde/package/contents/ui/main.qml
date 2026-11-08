@@ -597,7 +597,8 @@ PlasmoidItem {
 
     // ---------- Google Tasks (google-sync.py, gleiche Regeln wie src/google.cs unter Windows) ----------
     // Abgleich 3 Sekunden nach einer Aenderung an der Datei (wer in Obsidian tippt, dem wird nicht mitten in die Zeile
-    // geschrieben), sonst alle 2 Minuten. Google erlaubt dem ganzen Projekt 50.000 Anfragen pro Tag.
+    // geschrieben), sonst alle 30 Sekunden, nach Fehlern seltener (wie unter Windows). Google erlaubt dem ganzen Projekt
+    // 50.000 Anfragen pro Tag; ein ruhiger Durchlauf kostet eine.
     property bool googleOn: false
     property bool obsidianOn: true
     property bool googleConnected: false
@@ -610,6 +611,7 @@ PlasmoidItem {
     property bool hasPython: true
     property bool syncRunning: false
     property bool syncAgain: false
+    property int syncFailures: 0
     property string lastSyncedContent: ""
     readonly property string gpy: '"${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/google-sync.py"'
 
@@ -639,8 +641,9 @@ PlasmoidItem {
         if (!googleOn || configMissing) return;
         if (syncRunning) { syncAgain = true; return; }
         syncRunning = true;
-        run('python3 ' + gpy + ' sync 2>/dev/null; true', function (code, out) {
+        run('python3 ' + gpy + ' sync 2>/dev/null', function (code, out) {
             syncRunning = false;
+            syncFailures = code === 0 ? 0 : syncFailures + 1;
             readFile(todoFile, function (c) {
                 // Was der Abgleich selbst geschrieben hat, loest keinen weiteren aus. Hat jemand waehrenddessen
                 // geaendert, passt die Pruefsumme nicht - dann geht es normal ueber syncSoon weiter.
@@ -653,7 +656,7 @@ PlasmoidItem {
     }
     Timer { id: syncSoon; interval: 3000; onTriggered: root.runSync() }
     Timer {
-        interval: 120000; running: root.googleOn; repeat: true
+        interval: 30000 * (1 << Math.min(root.syncFailures, 4)); running: root.googleOn; repeat: true
         onTriggered: root.runSync()
     }
     Timer {
@@ -774,7 +777,7 @@ PlasmoidItem {
                 else if (c.indexOf("store=") === 0) root.storeClick(c.substring(6));
                 else if (c === "gpick") root.googleRun("pick-list", "Einen Moment – Listen werden geladen …");
                 else if (c === "gdisconnect") root.googleRun("disconnect", "Verbindung wird getrennt …");
-                else if (c === "gstate") root.run('printf %s ' + root.q("on=" + root.googleOn + " obs=" + root.obsidianOn + " conn=" + root.googleConnected + " busy=" + root.googleBusy + " sync=" + root.syncRunning + " list=" + root.googleListName + " status=" + root.googleStatus + " hint=" + root.googleHint + " file=" + root.todoFile) + ' > /tmp/taskboard-test.out');
+                else if (c === "gstate") root.run('printf %s ' + root.q("on=" + root.googleOn + " obs=" + root.obsidianOn + " conn=" + root.googleConnected + " busy=" + root.googleBusy + " sync=" + root.syncRunning + " failures=" + root.syncFailures + " list=" + root.googleListName + " status=" + root.googleStatus + " hint=" + root.googleHint + " file=" + root.todoFile) + ' > /tmp/taskboard-test.out');
                 else if (c === "rows") root.run('printf %s ' + root.q(root.rows.map(function (r) { return (r.done ? "[x] " : "[ ] ") + r.title + (r.dueLabel ? " (" + r.dueLabel + ")" : "") + (r.repeat ? " R" : "") + " #" + r.tags.map(function (t) { return t.name; }).join(",") + " subs=" + r.subs.map(function (s) { return s.title; }).join("/") + " notes=" + r.notes.length + " open=" + r.open; }).join("\n")) + ' > /tmp/taskboard-test.out');
                 else if (c === "updcheck") root.checkForUpdates();
                 else if (c === "updnow") root.installUpdate();

@@ -21,7 +21,7 @@ Im Zahnrad unter „Speichern in“ kannst du Obsidian, Google Tasks oder beides
 
 - Titel, Datum, Notizen, Unteraufgaben, Erledigt und Reihenfolge stehen in den normalen Feldern von Google Tasks.
 - Uhrzeit, Wiederholung und Tags kann Googles Schnittstelle nicht speichern. Sie stehen deshalb zusammen mit dem Erstellt-Datum in der letzten Zeile der Beschreibung (`⟦tb …⟧`). Eine Uhrzeit, die du direkt bei Google einträgst, sieht Task Board nicht.
-- Abgeglichen wird kurz nach jeder Änderung und sonst alle 2 Minuten. Ändern beide Seiten dasselbe Feld, gewinnt der PC.
+- Abgeglichen wird kurz nach jeder Änderung und sonst alle 30 Sekunden. Ändern beide Seiten dasselbe Feld, gewinnt der PC.
 - Hakst du einen Hauptpunkt ab, setzt Google seine Unteraufgaben ebenfalls auf erledigt.
 - Beim Anmelden zeigt Google „Google hat diese App nicht überprüft“: auf „Erweitert“ und dann „Zu Task Board wechseln“ klicken.
 - Der Zugangsschlüssel bleibt auf deinem Computer. „Verbindung trennen“ im Zahnrad löscht ihn, ebenso das Deinstallieren. Mehr dazu in der [Datenschutzerklärung](https://fantastesy.github.io/taskboard/datenschutz.html).

@@ -1368,7 +1368,8 @@ class GoogleSync
         if (p.Meta != "") lines.Add(Fmt.Trailer(p.Meta));
         string notes = string.Join("\n", lines);
         if (notes != "") d["notes"] = notes; else if (patch) d["notes"] = null;
-        if (p.Due != "") d["due"] = p.Due + "T00:00:00.000Z"; else if (patch) d["due"] = null;
+        // Datum nur schicken, wenn es sich geaendert hat: eine in Googles App gesetzte Uhrzeit soll dabei nicht verloren gehen
+        if (p.Due != (existing != null ? existing.Due : "")) d["due"] = p.Due != "" ? (object)(p.Due + "T00:00:00.000Z") : null;
         d["status"] = p.Done ? "completed" : "needsAction";
         if (!p.Done && patch) d["completed"] = null;
         return d;
@@ -1779,7 +1780,7 @@ static class GStatus
 }
 
 // ---------- Abgleich im Hintergrund (laeuft im TaskBoardHotkey-Prozess) ----------
-// Nach jeder Aenderung an der Todo.md (Liste, Obsidian, Claude) nach 1,5 s, sonst alle 2 Minuten.
+// Nach jeder Aenderung an der Todo.md (Liste, Obsidian, Claude) nach 1,5 s, sonst alle 30 Sekunden.
 // Google erlaubt dem ganzen Projekt 50.000 Anfragen pro Tag; ein ruhiger Durchlauf kostet eine.
 class GoogleBackground
 {
@@ -1884,7 +1885,7 @@ class GoogleBackground
                             lastOk = DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture);
                             if (s.Activity > 0) GLog.Write("Abgleich: " + s.Summary + " (" + s.Api.Calls + " Anfragen)");
                             GStatus.Write(res, "ok", "Verbunden · Liste „" + c.ListName + "“ · zuletzt abgeglichen " + lastOk, true);
-                            waitMs = 120000;
+                            waitMs = 30000;
                         }
                         else if (s.Suspicious != null)
                         {
