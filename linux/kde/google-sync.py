@@ -1579,7 +1579,8 @@ def login_with_dialog(auth):
     else:
         print("Dein Browser öffnet sich – bitte bei Google anmelden und Task Board erlauben ...")
     try:
-        return auth.login(300, cancelled=(lambda: dlg.poll() is not None) if dlg else None)
+        # eine Stunde: Familienkonten brauchen die Zustimmung der Eltern, und das Fenster hat einen Abbrechen-Knopf
+        return auth.login(3600, cancelled=(lambda: dlg.poll() is not None) if dlg else None)
     finally:
         if dlg and dlg.poll() is None:
             dlg.terminate()

@@ -2020,7 +2020,8 @@ class LoginWait : TbForm
         base.OnShown(e);
         var t = new Thread(delegate ()
         {
-            bool r = auth.Login(300);
+            // eine Stunde: Familienkonten brauchen die Zustimmung der Eltern, und das Fenster hat einen Abbrechen-Knopf
+            bool r = auth.Login(3600);
             try { BeginInvoke((MethodInvoker)delegate { ok = r; Close(); }); } catch { }
         });
         t.IsBackground = true;
