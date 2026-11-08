@@ -9,6 +9,7 @@
 #   google-sync.py store google|obsidian Obsidian aus/an ("nur Google" = Kopie in ~/.local/share/taskboard)
 #   google-sync.py enable 0|1            Abgleich aus/an (Verbindung bleibt)
 #   google-sync.py logout                nur abmelden (Deinstallation)
+#   google-sync.py login-again           wartende Anmeldung: Seite im Browser nochmal oeffnen (Tab geschlossen)
 #   Tests: sync-file <todo> <archiv> <liste> | dump <liste> | api <METHODE> <pfad> [json-datei] | parse <datei> | lists | newlist <name>
 #
 # So funktioniert der Abgleich:
@@ -49,6 +50,7 @@ STATE = os.path.join(DATA_DIR, "google-sync.json")
 STATUS = os.path.join(DATA_DIR, "google-status")  # Zustand \n verbunden(0/1) \n Text - liest das Einstellungen-Fenster
 LOGFILE = os.path.join(DATA_DIR, "google.log")
 GUARD = os.path.join(DATA_DIR, "google-guard")    # seit wann der Schutz gegen Massen-Loeschen greift
+AGAIN = os.path.join(DATA_DIR, "google-login-again")   # gibt es die Datei, oeffnet die wartende Anmeldung ihre Seite nochmal
 LOCAL_TODO = os.path.join(DATA_DIR, "Todo.md")
 LOCAL_ARCHIVE = os.path.join(DATA_DIR, "Todo-Archiv.md")
 CLIENT = os.environ.get("TASKBOARD_CLIENT") or os.path.join(SCRIPT_DIR, "google-client.json")
@@ -228,7 +230,7 @@ class GoogleAuth:
         self.stale = False
         write_text(TOKEN, json.dumps({"refresh_token": refresh, "access_token": self.access, "access_until": self.access_until}), mode=0o600)
 
-    def login(self, timeout=300, cancelled=None):
+    def login(self, timeout=300, cancelled=None, reopen=None):
         """Anmeldung im Browser: Google leitet nach der Zustimmung an http://127.0.0.1:<Port> zurueck."""
         self.last_error = None
         verifier = secrets.token_urlsafe(32)
@@ -242,13 +244,21 @@ class GoogleAuth:
             url = AUTH_URI + "?" + form(client_id=self.client_id, redirect_uri=redirect, response_type="code", scope=SCOPE,
                                         code_challenge=challenge, code_challenge_method="S256", state=state,
                                         access_type="offline", prompt="consent")
-            if os.environ.get("TASKBOARD_NO_BROWSER") != "1":
+
+            def open_page():
+                if os.environ.get("TASKBOARD_NO_BROWSER") == "1":
+                    log("Anmeldeseite geoeffnet (Test)")
+                    return
                 subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+            open_page()
             until = time.time() + timeout
             while time.time() < until:
                 if cancelled and cancelled():
                     self.last_error = "abgebrochen"
                     return False
+                if reopen and reopen():
+                    open_page()      # Google nimmt dieselbe Adresse wieder an
                 if not select.select([srv], [], [], 0.2)[0]:
                     continue
                 conn, _ = srv.accept()
@@ -1569,21 +1579,72 @@ def pick_list(api, current):
 
 
 def login_with_dialog(auth):
-    """Browser-Anmeldung; ein kleines Fenster bietet "Abbrechen" (niemand soll 5 Minuten festhaengen)."""
-    dlg = None
-    if have_kdialog():
-        dlg = subprocess.Popen(["kdialog", "--title", "Task Board – Anmeldung bei Google", "--ok-label", "Abbrechen", "--msgbox",
-                                "Dein Browser öffnet sich. Bitte melde dich dort bei Google an und erlaube Task Board den Zugriff.\n\n"
-                                "Bei „Google hat diese App nicht überprüft“: auf „Erweitert“ und dann auf „Zu Task Board wechseln“ klicken."],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Browser-Anmeldung. Ein kleines Fenster bietet "Seite nochmal öffnen" (Tab geschlossen) und "Abbrechen"."""
+    text = ("Dein Browser öffnet sich. Bitte melde dich dort bei Google an und erlaube Task Board den Zugriff.\n\n"
+            "Bei „Google hat diese App nicht überprüft“: auf „Erweitert“ und dann auf „Zu Task Board wechseln“ klicken.")
+    gui = have_kdialog()
+    dlg = [None]
+
+    def show():
+        dlg[0] = subprocess.Popen(["kdialog", "--title", "Task Board – Anmeldung bei Google", "--yes-label", "Seite nochmal öffnen",
+                                   "--no-label", "Abbrechen", "--yesno", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def cancelled():
+        rc = dlg[0].poll() if gui else None
+        return rc is not None and rc != 0
+
+    def clear_again():
+        try:
+            os.remove(AGAIN)
+            return True
+        except OSError:
+            return False
+
+    def reopen():
+        asked = False
+        if gui and dlg[0].poll() == 0:      # Knopf gedrueckt: Fenster schliesst sich, also neu zeigen
+            show()
+            asked = True
+        return clear_again() or asked
+
+    clear_again()
+    if gui:
+        show()
     else:
         print("Dein Browser öffnet sich – bitte bei Google anmelden und Task Board erlauben ...")
     try:
         # eine Stunde: Familienkonten brauchen die Zustimmung der Eltern, und das Fenster hat einen Abbrechen-Knopf
-        return auth.login(3600, cancelled=(lambda: dlg.poll() is not None) if dlg else None)
+        return auth.login(3600, cancelled=cancelled, reopen=reopen)
     finally:
-        if dlg and dlg.poll() is None:
-            dlg.terminate()
+        if gui and dlg[0].poll() is None:
+            dlg[0].terminate()
+
+
+def take_login_lock():
+    """Nur eine wartende Anmeldung. None = es wartet schon eine."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    f = open(os.path.join(DATA_DIR, "google-login.lock"), "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return f
+    except OSError:
+        f.close()
+        return None
+
+
+def turn_on(pick):
+    lock = need_lock()
+    c = Conf()
+    if c.list != pick[0] and not c.obsidian_on:
+        # nur Google: die Kopie auf diesem PC gehoert zur alten Liste - sie wird aus der neuen Liste neu gefuellt
+        write_text(LOCAL_TODO, "# Todo\n")
+        try:
+            os.remove(STATE)
+        except OSError:
+            pass
+    set_kv(GCONF, {"GOOGLE_ON": "1", "GOOGLE_LIST": pick[0], "GOOGLE_LIST_NAME": pick[1]})
+    write_status("ok", "Verbunden · Liste „" + pick[1] + "“ · wird abgeglichen …", True)
+    log("Liste gewaehlt: " + pick[0])
 
 
 def take_lock(wait):
@@ -1607,21 +1668,6 @@ def need_lock():
     if lock is None:
         raise GoogleError("der Abgleich läuft noch – bitte gleich nochmal versuchen", 0)
     return lock
-
-
-def turn_on(pick):
-    lock = need_lock()
-    c = Conf()
-    if c.list != pick[0] and not c.obsidian_on:
-        # nur Google: die Kopie auf diesem PC gehoert zur alten Liste - sie wird aus der neuen Liste neu gefuellt
-        write_text(LOCAL_TODO, "# Todo\n")
-        try:
-            os.remove(STATE)
-        except OSError:
-            pass
-    set_kv(GCONF, {"GOOGLE_ON": "1", "GOOGLE_LIST": pick[0], "GOOGLE_LIST_NAME": pick[1]})
-    write_status("ok", "Verbunden · Liste „" + pick[1] + "“ · wird abgeglichen …", True)
-    log("Liste gewaehlt: " + pick[0])
 
 
 def store_switch(to):
@@ -1757,7 +1803,13 @@ def main(argv):
     try:
         if cmd == "connect":
             out = argv[3] if len(argv) > 3 and argv[2] == "--out" else None
+            login_lock = None
             if not auth.connected or out:
+                login_lock = take_login_lock()
+                if login_lock is None:      # wartet schon (z. B. Tab geschlossen und nochmal geklickt): dort die Seite nochmal oeffnen
+                    write_text(AGAIN, "")
+                    print("laeuft")
+                    return 0
                 if not login_with_dialog(auth):
                     log("Anmeldung fehlgeschlagen: " + str(auth.last_error))
                     if not out:
@@ -1796,6 +1848,10 @@ def main(argv):
                     pass
             write_status("aus", "Nicht mit Google verbunden.", False)
             log("Verbindung getrennt")
+            print("ok")
+            return 0
+        if cmd == "login-again":
+            write_text(AGAIN, "")
             print("ok")
             return 0
         if cmd == "logout":

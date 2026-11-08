@@ -606,6 +606,7 @@ PlasmoidItem {
     property string googleListName: ""
     property string googleHint: ""          // kurzer Hinweis statt der Statuszeile ("Browser oeffnet sich ...")
     property bool googleBusy: false
+    property string googleBusyOp: ""
     property bool hasPython: true
     property bool syncRunning: false
     property bool syncAgain: false
@@ -667,10 +668,12 @@ PlasmoidItem {
         if (googleBusy) return;
         if (!hasPython) { showHint("Für Google Tasks wird Python 3 gebraucht (Paket python3)."); return; }
         googleBusy = true;
+        googleBusyOp = args;
         hintTimer.stop();
         googleHint = hint;
         run('python3 ' + gpy + ' ' + args + ' 2>&1 | tail -n1', function (code, out) {
             googleBusy = false;
+            googleBusyOp = "";
             googleHint = "";
             if (out.indexOf("kein-vault") >= 0) {
                 // noch nie eine Datei in Obsidian eingerichtet: jetzt eine waehlen (chooseTodo schaltet Obsidian dann ein)
@@ -688,7 +691,11 @@ PlasmoidItem {
     }
     // Haekchen "Speichern in": mindestens eins bleibt an
     function storeClick(which) {
-        if (googleBusy) return;
+        if (googleBusy) {
+            // Anmeldung wartet noch (z. B. Browser-Tab geschlossen): Anmeldeseite nochmal oeffnen
+            if (which === "google" && googleBusyOp === "connect") run('python3 ' + gpy + ' login-again >/dev/null 2>&1; true');
+            return;
+        }
         if (which === "google") {
             if (googleOn) {
                 if (!obsidianOn) { showHint("Ohne Google braucht die Liste Obsidian – zuerst „Obsidian“ anhaken."); return; }

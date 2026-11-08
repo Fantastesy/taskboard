@@ -236,6 +236,19 @@ class GoogleAuth
         return B64Url(b);
     }
 
+    public string LoginUrl;      // Anmeldeseite der laufenden Anmeldung
+
+    // Anmeldeseite im Browser oeffnen - auch noch einmal, wenn der Tab geschlossen wurde (Google nimmt dieselbe Adresse wieder an)
+    public void OpenLoginPage()
+    {
+        string url = LoginUrl;
+        if (url == null) return;
+#if DEV
+        if (Environment.GetEnvironmentVariable("TASKBOARD_NO_BROWSER") == "1") { GLog.Write("Anmeldeseite geoeffnet (Test)"); return; }
+#endif
+        Process.Start(url);
+    }
+
     // Anmeldung im Browser: Google leitet nach der Zustimmung an http://127.0.0.1:<Port> zurueck, wo dieses
     // Programm kurz zuhoert. Wartet hoechstens timeoutSeconds.
     public bool Login(int timeoutSeconds)
@@ -249,13 +262,10 @@ class GoogleAuth
             listener.Start();
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
             string redirect = "http://127.0.0.1:" + port;
-            string url = AuthUri + "?" + GHttp.Form("client_id", clientId, "redirect_uri", redirect, "response_type", "code",
+            LoginUrl = AuthUri + "?" + GHttp.Form("client_id", clientId, "redirect_uri", redirect, "response_type", "code",
                 "scope", Scope, "code_challenge", challenge, "code_challenge_method", "S256", "state", state,
                 "access_type", "offline", "prompt", "consent");
-#if DEV
-            if (Environment.GetEnvironmentVariable("TASKBOARD_NO_BROWSER") != "1")
-#endif
-            Process.Start(url);
+            OpenLoginPage();
             DateTime until = DateTime.UtcNow.AddSeconds(timeoutSeconds);
             while (DateTime.UtcNow < until)
             {
@@ -296,7 +306,7 @@ class GoogleAuth
             return false;
         }
         catch (Exception e) { LastError = e.Message; return false; }
-        finally { try { listener.Stop(); } catch { } }
+        finally { LoginUrl = null; try { listener.Stop(); } catch { } }
     }
 
     static string ReadRequestTarget(NetworkStream ns)
@@ -1993,12 +2003,30 @@ class TbForm : Form
     }
 }
 
-// Warten auf die Anmeldung im Browser - mit "Abbrechen", damit niemand 5 Minuten festhaengt
+// Warten auf die Anmeldung im Browser. "Seite nochmal öffnen", falls der Tab zu ist; "Abbrechen", damit niemand festhaengt.
 class LoginWait : TbForm
 {
+    const string AgainEvent = "TaskBoardGoogleLoginAgain";
     readonly GoogleAuth auth;
     readonly Label info;
     bool ok;
+
+    // zweiter Klick auf "Google Tasks" im Zahnrad: die wartende Anmeldung oeffnet ihre Seite nochmal
+    public static void SignalAgain()
+    {
+        try
+        {
+            EventWaitHandle ev;
+            if (EventWaitHandle.TryOpenExisting(AgainEvent, out ev)) { ev.Set(); ev.Dispose(); }
+        }
+        catch { }
+    }
+
+    void Reopen()
+    {
+        try { auth.OpenLoginPage(); }
+        catch (Exception e) { GLog.Write("Browser nicht startbar: " + e.Message); }
+    }
 
     LoginWait(GoogleAuth a)
     {
@@ -2008,7 +2036,10 @@ class LoginWait : TbForm
             Text = "Dein Browser öffnet sich. Bitte melde dich dort bei Google an und erlaube Task Board den Zugriff.\n\n" +
                    "Bei „Google hat diese App nicht überprüft“: auf „Erweitert“ und dann auf „Zu Task Board wechseln“ klicken." };
         Controls.Add(info);
-        Button cancel = MakeButton("Abbrechen", 20, 140, 130, false);
+        Button again = MakeButton("Seite nochmal öffnen", 20, 140, 220, true);
+        again.Click += delegate { Reopen(); };
+        Controls.Add(again);
+        Button cancel = MakeButton("Abbrechen", 250, 140, 130, false);
         cancel.Click += delegate { auth.CancelLogin = true; info.Text = "Wird abgebrochen …"; };
         Controls.Add(cancel);
         ClientSize = new System.Drawing.Size(540, 192);
@@ -2026,6 +2057,18 @@ class LoginWait : TbForm
         });
         t.IsBackground = true;
         t.Start();
+        var watch = new Thread(delegate ()
+        {
+            try
+            {
+                using (var ev = new EventWaitHandle(false, EventResetMode.AutoReset, AgainEvent))
+                    while (!IsDisposed)
+                        if (ev.WaitOne(500)) BeginInvoke((MethodInvoker)Reopen);
+            }
+            catch { }
+        });
+        watch.IsBackground = true;
+        watch.Start();
     }
 
     public static bool Run(GoogleAuth a)
@@ -2204,6 +2247,7 @@ static class GoogleCli
         GLog.Dir = GLog.StateDir();
         GLog.Echo = Environment.GetEnvironmentVariable("TASKBOARD_GOOGLE_ECHO") == "1";
         if (args[0] == "--google-sync-now") { GStatus.Poke(); return 0; }
+        if (args[0] == "--google-login-again") { LoginWait.SignalAgain(); return 0; }
         // Test: nur den Hintergrund-Abgleich laufen lassen (ohne Tastenkuerzel), <Sekunden> lang
         if (args[0] == "--google-background") { GoogleBackground.Start(exeDir); Thread.Sleep(1000 * (args.Length > 1 ? int.Parse(args[1]) : 60)); return 0; }
         GoogleAuth auth = GoogleAuth.Load(exeDir, GLog.Dir);
@@ -2219,14 +2263,34 @@ static class GoogleCli
                 {
                     Application.EnableVisualStyles();
                     string outFile = args.Length > 2 && args[1] == "--out" ? args[2] : null;
+                    // Rainmeter beendet das Programm, sobald das Einstellungen-Fenster zugeht. Die Anmeldung laeuft
+                    // deshalb in einem eigenen Prozess, der das ueberlebt; dieser hier wartet nur auf ihn.
+                    if (outFile == null && !(args.Length > 1 && args[1] == "--detached"))
+                    {
+                        using (Process p = Process.Start(new ProcessStartInfo(Application.ExecutablePath, "--google-connect --detached") { UseShellExecute = true }))
+                        {
+                            p.WaitForExit();
+                            return p.ExitCode;
+                        }
+                    }
                     if (!auth.Connected || outFile != null)
                     {
-                        if (!LoginWait.Run(auth))
+                        bool first;
+                        using (var waiting = new Mutex(true, "TaskBoardGoogleLoginWait", out first))
                         {
-                            GLog.Write("Anmeldung fehlgeschlagen: " + auth.LastError);
-                            if (outFile == null) GStatus.Write(exeDir, "aus", "Nicht verbunden: " + auth.LastError, false);
-                            Out("fehler: " + auth.LastError);
-                            return 1;
+                            // wartet schon (z. B. Tab geschlossen und nochmal geklickt): dort die Seite nochmal oeffnen
+                            if (!first) { LoginWait.SignalAgain(); Out("laeuft"); return 0; }
+                            try
+                            {
+                                if (!LoginWait.Run(auth))
+                                {
+                                    GLog.Write("Anmeldung fehlgeschlagen: " + auth.LastError);
+                                    if (outFile == null) GStatus.Write(exeDir, "aus", "Nicht verbunden: " + auth.LastError, false);
+                                    Out("fehler: " + auth.LastError);
+                                    return 1;
+                                }
+                            }
+                            finally { waiting.ReleaseMutex(); }
                         }
                         GLog.Write("angemeldet");
                     }

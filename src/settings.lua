@@ -126,6 +126,7 @@ end
 -- --google-store google|obsidian. Den Stand schreibt es nach google-status.txt (Zustand, verbunden, Text).
 local gState, gConnected, gText, gStamp = 'aus', false, '', nil
 local busy = false
+local busyLogin = false      -- die Anmeldung im Browser wartet gerade
 local lastPoll = 0
 
 local function readStatus()
@@ -163,6 +164,7 @@ end
 
 local function runGoogle(args, text)
 	busy = true
+	busyLogin = args == '--google-connect'
 	info(text)
 	SKIN:Bang('!SetOption', 'MeasureGoogle', 'Parameter', args)
 	SKIN:Bang('!UpdateMeasure', 'MeasureGoogle')
@@ -180,6 +182,14 @@ local function reloadAll()
 end
 
 function Store(which)
+	if busy then
+		-- Anmeldung wartet noch (z. B. Browser-Tab geschlossen): Anmeldeseite nochmal oeffnen
+		if busyLogin and which == 'google' then
+			SKIN:Bang('["' .. SKIN:GetVariable('@') .. 'TaskBoardHotkey.exe" --google-login-again]')
+			info('Die Anmeldeseite wird nochmal geöffnet – bitte bei Google anmelden und Task Board erlauben …')
+		end
+		return
+	end
 	readStatus()
 	local obs = SKIN:GetVariable('ObsidianOn') ~= '0'
 	local goo = SKIN:GetVariable('GoogleOn') == '1'
@@ -207,6 +217,7 @@ function Store(which)
 end
 
 function GoogleRun(args)
+	if busy then return end
 	if args == '--google-pick-list' then runGoogle(args, 'Einen Moment – Listen werden geladen …')
 	else runGoogle(args, 'Verbindung wird getrennt …') end
 end
@@ -214,6 +225,7 @@ end
 -- TaskBoardHotkey.exe ist fertig
 function GoogleDone()
 	busy = false
+	busyLogin = false
 	local out = SKIN:GetMeasure('MeasureGoogle'):GetStringValue() or ''
 	if out:find('kein%-vault') then
 		-- noch nie eine Datei in Obsidian eingerichtet: jetzt eine waehlen (choose-todo.ps1 schaltet Obsidian dann ein)
