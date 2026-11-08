@@ -86,6 +86,7 @@ var
   GoogleBtn: TNewButton;
   GoogleLabel: TNewStaticText;
   GoogleListId, GoogleListName: String;
+  GoogleOnlyInstalled: Boolean;   { Update einer Installation mit "nur Google" }
 
 { bisheriger Programmordner (leer bei Erstinstallation) }
 function PrevAppDir: String;
@@ -142,7 +143,7 @@ var
   I, P: Integer;
   Key, Value, OutFile: String;
 begin
-  RainmeterExe := ''; SkinPath := ''; ObsidianExe := ''; OldTodoDir := '';
+  RainmeterExe := ''; SkinPath := ''; ObsidianExe := ''; OldTodoDir := ''; GoogleOnlyInstalled := False;
   VaultList.Clear; TodoInList.Clear;
   OutFile := ExpandConstant('{tmp}\detect.txt');
   DeleteFile(OutFile);
@@ -159,7 +160,8 @@ begin
     else if Key = 'ObsidianExe' then ObsidianExe := Value
     else if Key = 'Vault' then VaultList.Add(Value)
     else if Key = 'TodoIn' then TodoInList.Add(Value)
-    else if Key = 'OldTodo' then OldTodoDir := ExtractFileDir(Value);
+    else if Key = 'OldTodo' then OldTodoDir := ExtractFileDir(Value)
+    else if Key = 'GoogleOnly' then GoogleOnlyInstalled := True;
   end;
 end;
 
@@ -171,7 +173,7 @@ end;
 { Obsidian gewaehlt? Bei Updates immer (die Einstellung bleibt, wie sie ist) }
 function UseObsidian: Boolean;
 begin
-  Result := (not FreshInstall) or ObsCheck.Checked;
+  Result := (not GoogleOnlyInstalled) and ((not FreshInstall) or ObsCheck.Checked);
 end;
 
 { Google-Anmeldung im Setup: TaskBoardHotkey.exe meldet an, laesst die Liste waehlen und schreibt "id<TAB>name" }

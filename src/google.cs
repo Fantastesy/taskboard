@@ -189,6 +189,7 @@ class GoogleAuth
     DateTime accessUntil;
     public string LastError;
     public bool Revoked;        // Google hat den Zugang zurueckgezogen (abgemeldet / in den Kontoeinstellungen entfernt)
+    public volatile bool CancelLogin;   // "Abbrechen" im Wartefenster
 
     GoogleAuth(string id, string secret, string dir) { clientId = id; clientSecret = secret; this.dir = dir; }
 
@@ -208,6 +209,9 @@ class GoogleAuth
 
     string TokenFile { get { return Path.Combine(dir, "google-token.bin"); } }
     public bool Connected { get { return File.Exists(TokenFile); } }
+#if DEV
+    public string DevRefreshToken() { return LoadRefreshToken(); }   // nur Testfassung: Linux-Test mit demselben Testkonto
+#endif
 
     string LoadRefreshToken()
     {
@@ -248,10 +252,14 @@ class GoogleAuth
             string url = AuthUri + "?" + GHttp.Form("client_id", clientId, "redirect_uri", redirect, "response_type", "code",
                 "scope", Scope, "code_challenge", challenge, "code_challenge_method", "S256", "state", state,
                 "access_type", "offline", "prompt", "consent");
+#if DEV
+            if (Environment.GetEnvironmentVariable("TASKBOARD_NO_BROWSER") != "1")
+#endif
             Process.Start(url);
             DateTime until = DateTime.UtcNow.AddSeconds(timeoutSeconds);
             while (DateTime.UtcNow < until)
             {
+                if (CancelLogin) { LastError = "abgebrochen"; return false; }
                 if (!listener.Pending()) { Thread.Sleep(100); continue; }
                 using (TcpClient client = listener.AcceptTcpClient())
                 {
@@ -635,12 +643,33 @@ static class Fmt
     // Titel einer Google-Aufgabe: Tags darin wandern in die Zusatzangaben
     public static string RemoteTitle(string title, out List<string> tags)
     {
-        title = title.Replace('\r', ' ').Replace('\n', ' ');
+        title = StripMarker(title.Replace('\r', ' ').Replace('\n', ' '));
         tags = TagsOf(title);
         return StripTags(title).Trim();
     }
 
     public static string Trailer(string meta) { return TrailerOpen + " " + meta + TrailerClose; }
+
+    // Googles Grenzen: Titel 1024, Notizen 8192 Zeichen. Was laenger ist, bleibt in der Datei vollstaendig;
+    // bei Google steht der Anfang, die Schlusszeile mit den Zusatzangaben bleibt immer erhalten.
+    public const int MaxTitle = 1024, MaxNotes = 8192;
+    public static string FitTitle(string t) { return t.Length > MaxTitle ? t.Substring(0, MaxTitle).Trim() : t; }
+    public static List<string> FitNotes(List<string> notes, string meta)
+    {
+        int room = MaxNotes - (meta != "" ? Trailer(meta).Length + 1 : 0);
+        string joined = string.Join("\n", notes);
+        if (joined.Length <= room) return new List<string>(notes);
+        var outp = new List<string>();
+        foreach (string l in joined.Substring(0, Math.Max(0, room)).Split('\n')) { string t = l.Trim(); if (t != "") outp.Add(t); }
+        return outp;
+    }
+
+    // Notizzeile in der Datei. Sieht der Text wie eine Checkbox aus ("[ ] Milch"), ohne "- " schreiben -
+    // sonst waere er beim naechsten Lesen eine Unteraufgabe.
+    public static string NoteLine(string indent, string note)
+    {
+        return indent + "    " + (Regex.IsMatch(note, @"^\[[ xX]\]") ? "" : "- ") + note;
+    }
 
     // Notizfeld von Google: eigene Notizzeilen + Zusatzangaben aus der Schlusszeile
     public static void SplitNotes(string notes, out List<string> human, out string meta)
@@ -743,6 +772,16 @@ class Proj
         return p;
     }
 
+    // Was Google wegen seiner Laengengrenzen nur gekuerzt speichern kann, gilt als gleich - sonst wuerde die
+    // gekuerzte Fassung beim naechsten Abgleich als "Aenderung bei Google" in die Datei zurueckkommen
+    public static void Align(Proj remote, Proj full)
+    {
+        if (full == null) return;
+        if (remote.Title != full.Title && remote.Title == Fmt.FitTitle(full.Title)) remote.Title = full.Title;
+        if (remote.NotesKey != full.NotesKey && remote.NotesKey == string.Join("\n", Fmt.FitNotes(full.Notes, full.Meta)))
+            remote.Notes = new List<string>(full.Notes);
+    }
+
     static string Pick(string b, string l, string r, bool localWins)
     {
         if (l == r) return l;
@@ -812,7 +851,7 @@ class TBlock
         else
         {
             foreach (TItem s in Subs) outp.Add(s.Output());
-            foreach (string n in Head.P.Notes) outp.Add(Head.Indent + "    - " + n);
+            foreach (string n in Head.P.Notes) outp.Add(Fmt.NoteLine(Head.Indent, n));
         }
         return outp;
     }
@@ -831,7 +870,7 @@ class TodoDoc
     public static TodoDoc Parse(string content)
     {
         var d = new TodoDoc();
-        if (content.Length > 0 && content[0] == '﻿') { d.Bom = "﻿"; content = content.Substring(1); }
+        if (content.Length > 0 && content[0] == (char)0xFEFF) { d.Bom = ((char)0xFEFF).ToString(); content = content.Substring(1); }
         d.Nl = content.IndexOf("\r\n", StringComparison.Ordinal) >= 0 ? "\r\n" : "\n";
         TBlock cur = null;
         int curIndent = 0;
@@ -949,6 +988,7 @@ class GoogleSync
     Dictionary<string, RTask> remote;     // Google-ID -> Aufgabe bei Google
     Dictionary<string, List<string>> rorder;   // Eltern-ID ("" = oben) -> Reihenfolge bei Google (mitgefuehrt)
     List<List<string>> archiveBlocks;
+    readonly HashSet<string> reopened = new HashSet<string>();
     int nCreated, nPatched, nDeleted, nPulled, nAdded, nArchived, nMoved, nReordered;
 
     public string Summary
@@ -1014,10 +1054,27 @@ class GoogleSync
         catch { return false; }
     }
 
+    // Datei lesen, bis sie zweimal gleich ist: die Liste schreibt nicht atomar, ein Lesen mittendrin saehe sie halb leer
+    static string StableRead(string path)
+    {
+        string a = ReadText(path);
+        for (int i = 0; i < 10; i++)
+        {
+            Thread.Sleep(120);
+            string b = ReadText(path);
+            if (b == a) return a;
+            a = b;
+        }
+        return a;
+    }
+
+    public bool AllowMassChange;          // Schutz unten aufheben (nach 30 Minuten, siehe GoogleBackground)
+    public string Suspicious;             // gesetzt, wenn der Schutz gegriffen hat: Beschreibung fuer die Statuszeile
+
     bool RunLocked()
     {
         st = null;
-        string c0 = ReadText(TodoPath);
+        string c0 = StableRead(TodoPath);
         if (c0 == null)
         {
             if (!CreateIfMissing) { GLog.Write("Todo-Datei fehlt - Abgleich ausgesetzt"); return false; }
@@ -1052,6 +1109,20 @@ class GoogleSync
         // Schutz: Datei ohne Punkte, obwohl beim letzten Mal welche da waren -> lieber nichts tun
         if (items == 0 && st.Items.Count >= 3) { GLog.Write("Todo-Datei ohne Punkte - Abgleich ausgesetzt (Schutz)"); return false; }
         AdoptPending();
+
+        // Schutz: verschwinden viele offene Eintraege auf einmal (Datei zurueckgespielt, Google-Liste geleert), erst mal
+        // nichts loeschen. Hat es seine Richtigkeit, wird es nach 30 Minuten uebernommen.
+        int openKnown = st.Items.Count(e => !e.Value.P.Done);
+        int goneLocal = st.Items.Count(e => !e.Value.P.Done && !local.ContainsKey(e.Key) && remote.ContainsKey(e.Key));
+        int goneRemote = st.Items.Count(e => !e.Value.P.Done && local.ContainsKey(e.Key) && !remote.ContainsKey(e.Key));
+        if (!AllowMassChange && (goneLocal >= 5 || goneRemote >= 5) && Math.Max(goneLocal, goneRemote) * 2 >= openKnown)
+        {
+            Suspicious = goneLocal >= goneRemote
+                ? "In der Datei fehlen auf einmal " + goneLocal + " Einträge – bei Google wird vorerst nichts gelöscht."
+                : "Bei Google fehlen auf einmal " + goneRemote + " Einträge – in der Datei wird vorerst nichts entfernt.";
+            GLog.Write("Schutz: " + goneLocal + " Eintraege fehlen in der Datei, " + goneRemote + " bei Google (von " + openKnown + " offenen)");
+            return false;
+        }
 
         // 1. bekannte Eintraege: erst Punkte, dann Unteraufgaben
         foreach (string id in st.Items.Where(e => e.Value.Parent == "").Select(e => e.Key).ToList()) Known(id);
@@ -1099,7 +1170,7 @@ class GoogleSync
             catch (Exception e) { GLog.Write("Archiv nicht geschrieben: " + e.Message); }
         }
         st.Pending.Clear();
-        st.Order = doc.Blocks().Where(b => b.Head.Id != null).Select(b => b.Head.Id).ToList();
+        st.Order = doc.Blocks().Where(b => b.Head.Id != null && !b.Head.P.Done).Select(b => b.Head.Id).ToList();
         st.Save(StatePath);
         Written = c1;
         Changed = c1 != c0;
@@ -1164,6 +1235,7 @@ class GoogleSync
             // in der Datei weg (archiviert oder geloescht)
             bool sub = R.Parent != null;
             Proj pr = Proj.OfRemote(R, sub);
+            Proj.Align(pr, e.P);
             if (!pr.Same(e.P))
             {
                 // bei Google inzwischen geaendert -> nicht loeschen, sondern wieder in die Datei holen
@@ -1183,9 +1255,9 @@ class GoogleSync
         if (R == null)
         {
             // bei Google geloescht
-            if (!L.P.Same(e.P))
+            if (!L.P.Same(e.P) || (L.IsSub && L.Block.Head.Id == null))
             {
-                // in der Datei inzwischen geaendert -> bei Google neu anlegen (Schritt 3)
+                // in der Datei inzwischen geaendert (oder Unteraufgabe eines solchen Punkts) -> bei Google neu anlegen (Schritt 3)
                 local.Remove(id);
                 L.Id = null;
                 L.MarkerChanged = true;
@@ -1198,6 +1270,7 @@ class GoogleSync
         }
         bool isSub = L.IsSub;
         Proj prr = Proj.OfRemote(R, isSub);
+        Proj.Align(prr, L.P);
         Proj merged = Proj.Merge(e.P, L.P, prr, true);
         Apply(L, R, merged, prr);
         st.Items[id] = new SyncState.Entry { P = merged, Parent = ParentOf(L) };
@@ -1233,6 +1306,12 @@ class GoogleSync
             RTask nr = Api.Patch(ListId, R.Id, Body(merged, R, L.IsSub, true));
             if (nr != null) remote[R.Id] = nr;
             nPatched++;
+            // wieder geoeffnet: Google setzt die Aufgabe dabei selbst woanders hin -> in SyncOrder an ihren Platz zurueck
+            if (pr.Done && !merged.Done)
+            {
+                foreach (var l in rorder.Values) l.Remove(R.Id);
+                reopened.Add(R.Id);
+            }
         }
     }
 
@@ -1240,19 +1319,18 @@ class GoogleSync
     static Dictionary<string, object> Body(Proj p, RTask existing, bool sub, bool patch)
     {
         var d = new Dictionary<string, object>();
-        d["title"] = Cut(p.Title, 1024);
+        d["title"] = Fmt.FitTitle(p.Title);
         var lines = new List<string>();
-        if (sub) { if (existing != null) { List<string> h; string m; Fmt.SplitNotes(existing.Notes, out h, out m); lines.AddRange(h); } }
-        else lines.AddRange(p.Notes);
+        if (sub) { if (existing != null) { List<string> h; string m; Fmt.SplitNotes(existing.Notes, out h, out m); lines.AddRange(Fmt.FitNotes(h, p.Meta)); } }
+        else lines.AddRange(Fmt.FitNotes(p.Notes, p.Meta));
         if (p.Meta != "") lines.Add(Fmt.Trailer(p.Meta));
-        string notes = Cut(string.Join("\n", lines), 8192);
+        string notes = string.Join("\n", lines);
         if (notes != "") d["notes"] = notes; else if (patch) d["notes"] = null;
         if (p.Due != "") d["due"] = p.Due + "T00:00:00.000Z"; else if (patch) d["due"] = null;
         d["status"] = p.Done ? "completed" : "needsAction";
         if (!p.Done && patch) d["completed"] = null;
         return d;
     }
-    static string Cut(string s, int max) { return s.Length > max ? s.Substring(0, max) : s; }
 
     // ---------- Aenderungen an der Datei ----------
     void RemoveLocal(TItem L)
@@ -1358,6 +1436,7 @@ class GoogleSync
             // Kennung steht schon in der Datei, aber es gibt keinen gemeinsamen Stand (anderer PC, neu eingerichtet):
             // je Feld zusammenfuehren, bei Streit gewinnt die neuere Seite
             Proj pr = Proj.OfRemote(r, L.IsSub);
+            Proj.Align(pr, L.P);
             Proj merged = Proj.Merge(null, L.P, pr, r.Updated <= fileTime);
             Apply(L, r, merged, pr);
             st.Items[r.Id] = new SyncState.Entry { P = merged, Parent = ParentOf(L) };
@@ -1382,6 +1461,7 @@ class GoogleSync
     void CreateRemote(TItem it, string parentId, TBlock b)
     {
         if (it.IsSub && parentId == null) return;
+        if (it.P.Title == "") return;      // leere Checkbox (wird gerade in Obsidian getippt)
         string prev = null;
         if (!it.IsSub)
         {
@@ -1419,12 +1499,21 @@ class GoogleSync
         list.Insert(at < 0 ? list.Count : at, id);
     }
 
-    void MoveRemote(string id, string parent, string prev)
+    // false: Google lehnt die Verschiebung ab (z. B. Aufgabe mit Unteraufgaben unter eine andere) - dann bleibt es so
+    bool MoveRemote(string id, string parent, string prev)
     {
-        RTask nr = Api.Move(ListId, id, parent == "" ? null : parent, prev);
+        RTask nr;
+        try { nr = Api.Move(ListId, id, parent == "" ? null : parent, prev); }
+        catch (GoogleException e)
+        {
+            if (e.Code != 400) throw;
+            GLog.Write("Verschieben abgelehnt: " + e.Message);
+            return false;
+        }
         if (nr != null) remote[id] = nr;
         InsertOrder(parent, id, prev);
         nMoved++;
+        return true;
     }
 
     // Gliederung wie in der Datei (Unteraufgabe unter einem anderen Punkt, Punkt <-> Unteraufgabe)
@@ -1433,7 +1522,8 @@ class GoogleSync
         foreach (TBlock b in doc.Blocks())
         {
             CheckParent(b.Head, "");
-            foreach (TItem s in b.Subs) CheckParent(s, b.Head.Id ?? "");
+            if (b.Head.Id == null) continue;
+            foreach (TItem s in b.Subs) CheckParent(s, b.Head.Id);
         }
     }
     void CheckParent(TItem it, string want)
@@ -1441,7 +1531,7 @@ class GoogleSync
         RTask r;
         if (it.Id == null || !remote.TryGetValue(it.Id, out r)) return;
         if ((r.Parent ?? "") == want) return;
-        MoveRemote(it.Id, want, null);
+        if (!MoveRemote(it.Id, want, null)) return;
         SyncState.Entry e;
         if (st.Items.TryGetValue(it.Id, out e)) e.Parent = want;
     }
@@ -1450,8 +1540,27 @@ class GoogleSync
 
     void SyncOrder()
     {
+        // wieder geoeffnete Aufgaben an ihren Platz in der Datei setzen (in Dateireihenfolge, der Vorgaenger steht dann schon)
+        if (reopened.Count > 0)
+        {
+            string prevHead = null;
+            foreach (TBlock b in doc.Blocks())
+            {
+                if (b.Head.Id == null) continue;
+                if (reopened.Contains(b.Head.Id)) MoveRemote(b.Head.Id, "", prevHead);
+                if (!b.Head.P.Done) prevHead = b.Head.Id;
+                string prevSub = null;
+                foreach (TItem s in b.Subs)
+                {
+                    if (s.Id == null) continue;
+                    if (reopened.Contains(s.Id)) MoveRemote(s.Id, b.Head.Id, prevSub);
+                    if (!s.P.Done) prevSub = s.Id;
+                }
+            }
+        }
         // Punkte: wer hat seit dem letzten Abgleich umsortiert? Datei gewinnt, wenn beide.
-        List<string> localSeq = doc.Blocks().Where(b => b.Head.Id != null).Select(b => b.Head.Id).ToList();
+        // Nur offene Eintraege: erledigte zeigt Google getrennt, ihre Position bedeutet nichts.
+        List<string> localSeq = doc.Blocks().Where(b => b.Head.Id != null && !b.Head.P.Done).Select(b => b.Head.Id).ToList();
         var common = new HashSet<string>(localSeq.Where(id => OrderOf("").Contains(id)));
         List<string> l1 = localSeq.Where(common.Contains).ToList();
         List<string> r1 = OrderOf("").Where(common.Contains).ToList();
@@ -1469,7 +1578,7 @@ class GoogleSync
         {
             if (b.Head.Id == null) continue;
             List<string> have = OrderOf(b.Head.Id);
-            List<string> want = b.Subs.Where(s => s.Id != null && have.Contains(s.Id)).Select(s => s.Id).ToList();
+            List<string> want = b.Subs.Where(s => s.Id != null && !s.P.Done && have.Contains(s.Id)).Select(s => s.Id).ToList();
             List<string> cur = have.Where(want.Contains).ToList();
             if (!SeqEq(want, cur)) PushOrder(b.Head.Id, want, cur);
         }
@@ -1592,7 +1701,7 @@ class GConf
     {
         string inc = "[Variables]\r\nTodoFile=" + todo + "\r\nArchiveFile=" + archive + "\r\nVaultName=" + vaultName + "\r\n";
         if (obsidian) inc += "TodoUrl=" + Uri.EscapeDataString(todo) + "\r\nArchiveUrl=" + Uri.EscapeDataString(archive) + "\r\n";
-        else inc += "TodoUrl=\r\nArchiveUrl=\r\nTodoOpen=https://tasks.google.com/\r\nArchiveOpen=" + archive + "\r\n";
+        else inc += "TodoUrl=\r\nArchiveUrl=\r\nTodoOpen=https://tasks.google.com/\r\nTodoOpenTip=Google Tasks öffnen\r\nArchiveOpen=" + archive + "\r\n";
         File.WriteAllText(Settings, inc, Encoding.Unicode);
     }
 }
@@ -1637,8 +1746,36 @@ class GoogleBackground
     FileSystemWatcher watcher;
     string watched;
     volatile string lastWritten;
+    long lastEventTicks;             // Zeitpunkt der letzten fremden Aenderung an der Datei
+    DateTime suspiciousSince = DateTime.MinValue;
+    bool allowMass;
 
     GoogleBackground(string res) { this.res = res; }
+
+    // ---------- Ein Vault auf zwei PCs (Nextcloud): nur einer gleicht mit Google ab ----------
+    // Sonst aendern beide dieselbe Datei und dieselbe Liste gleichzeitig (Konflikte, doppelte Archiv-Eintraege).
+    // ".taskboard-sync" neben der Todo.md: "<PC>\t<Unix-Zeit>", spaetestens alle 5 Minuten erneuert.
+    // Der andere PC haelt sich zurueck, solange die Datei juenger als 20 Minuten ist; ist der PC aus, uebernimmt er.
+    const int OwnerRenewSec = 300, OwnerStaleSec = 1200;
+
+    // null = wir duerfen abgleichen, sonst der Name des anderen PCs
+    static string OtherOwner(string todoFile)
+    {
+        try
+        {
+            string f = Path.Combine(Path.GetDirectoryName(todoFile), ".taskboard-sync");
+            string me = Environment.MachineName;
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            string[] p = File.Exists(f) ? File.ReadAllText(f, Encoding.UTF8).Trim().Split('\t') : new string[0];
+            long ts = 0;
+            bool valid = p.Length == 2 && long.TryParse(p[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out ts);
+            if (valid && p[0] != me && now - ts < OwnerStaleSec) return p[0];
+            if (!valid || p[0] != me || now - ts >= OwnerRenewSec)
+                File.WriteAllText(f, me + "\t" + now.ToString(CultureInfo.InvariantCulture), new UTF8Encoding(false));
+        }
+        catch { }        // Ordner nicht beschreibbar o. Ae.: normal weiter abgleichen
+        return null;
+    }
 
     public static void Start(string res)
     {
@@ -1679,23 +1816,44 @@ class GoogleBackground
                 }
                 else
                 {
-                    Watch(c.TodoFile);
-                    var s = new GoogleSync
+                    string other = c.ObsidianOn ? OtherOwner(c.TodoFile) : null;
+                    if (other != null)
                     {
-                        TodoPath = c.TodoFile, ArchivePath = c.ArchiveFile, ListId = c.ListId, StatePath = GConf.StatePath,
-                        CreateIfMissing = !c.ObsidianOn, Api = new TasksApi(auth)
-                    };
-                    bool ok = s.Run();
-                    if (ok)
-                    {
-                        lastWritten = s.Written;
-                        failures = 0;
-                        lastOk = DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture);
-                        if (s.Activity > 0) GLog.Write("Abgleich: " + s.Summary + " (" + s.Api.Calls + " Anfragen)");
-                        GStatus.Write(res, "ok", "Verbunden · Liste „" + c.ListName + "“ · zuletzt abgeglichen " + lastOk, true);
-                        waitMs = 120000;
+                        // der andere PC gleicht diesen Vault gerade ab; unsere Aenderungen kommen ueber die Nextcloud zu ihm
+                        Watch(null);
+                        GStatus.Write(res, "ok", "Verbunden · Abgleich läuft gerade auf „" + other + "“", true);
+                        waitMs = 300000;
                     }
-                    else { failures++; waitMs = 20000; }      // z. B. Datei gerade geaendert: bald nochmal
+                    else
+                    {
+                        Watch(c.TodoFile);
+                        var s = new GoogleSync
+                        {
+                            TodoPath = c.TodoFile, ArchivePath = c.ArchiveFile, ListId = c.ListId, StatePath = GConf.StatePath,
+                            CreateIfMissing = !c.ObsidianOn, Api = new TasksApi(auth), AllowMassChange = allowMass
+                        };
+                        bool ok = s.Run();
+                        if (ok)
+                        {
+                            lastWritten = s.Written;
+                            failures = 0;
+                            suspiciousSince = DateTime.MinValue;
+                            allowMass = false;
+                            lastOk = DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture);
+                            if (s.Activity > 0) GLog.Write("Abgleich: " + s.Summary + " (" + s.Api.Calls + " Anfragen)");
+                            GStatus.Write(res, "ok", "Verbunden · Liste „" + c.ListName + "“ · zuletzt abgeglichen " + lastOk, true);
+                            waitMs = 120000;
+                        }
+                        else if (s.Suspicious != null)
+                        {
+                            // Schutz gegriffen: 30 Minuten abwarten (Datei kommt zurueck?), danach uebernehmen
+                            if (suspiciousSince == DateTime.MinValue) suspiciousSince = DateTime.UtcNow;
+                            allowMass = (DateTime.UtcNow - suspiciousSince).TotalMinutes >= 30;
+                            GStatus.Write(res, "fehler", s.Suspicious, true);
+                            waitMs = 60000;
+                        }
+                        else { failures++; waitMs = 20000; }      // z. B. Datei gerade geaendert: bald nochmal
+                    }
                 }
             }
             catch (GoogleException e)
@@ -1716,9 +1874,16 @@ class GoogleBackground
                 GStatus.Write(res, "fehler", "Fehler beim Abgleich – wird nochmal versucht (Details: google.log).", true);
                 waitMs = Math.Min(600000, 30000 * (1 << Math.Min(failures, 4)));
             }
-            WaitHandle.WaitAny(new WaitHandle[] { wake, poke }, waitMs);
-            // kurz warten, bis Aenderungen ruhen (Obsidian speichert oft in mehreren Schritten)
-            Thread.Sleep(1500);
+            int woke = WaitHandle.WaitAny(new WaitHandle[] { wake, poke }, waitMs);
+            if (woke == 0)
+            {
+                // Datei geaendert: warten, bis sie 3 Sekunden ruht (hoechstens 30) - wer in Obsidian tippt, dem soll
+                // der Abgleich nicht mitten in die Zeile schreiben
+                DateTime until = DateTime.UtcNow.AddSeconds(30);
+                while (DateTime.UtcNow < until && (DateTime.UtcNow.Ticks - Interlocked.Read(ref lastEventTicks)) < TimeSpan.TicksPerSecond * 3)
+                    Thread.Sleep(250);
+            }
+            else if (woke == 1) Thread.Sleep(300);
             wake.Reset();
         }
     }
@@ -1727,18 +1892,19 @@ class GoogleBackground
     {
         if (file == watched) return;
         if (watcher != null) { watcher.EnableRaisingEvents = false; watcher.Dispose(); watcher = null; }
-        watched = file;
+        watched = null;
         if (string.IsNullOrEmpty(file)) return;
         try
         {
             string dir = Path.GetDirectoryName(file);
-            if (!Directory.Exists(dir)) return;
+            if (!Directory.Exists(dir)) return;              // naechster Durchlauf versucht es wieder (z. B. Laufwerk noch nicht da)
             watcher = new FileSystemWatcher(dir, Path.GetFileName(file)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size };
             FileSystemEventHandler h = delegate { OnFileEvent(); };
             watcher.Changed += h;
             watcher.Created += h;
             watcher.Renamed += delegate { OnFileEvent(); };
             watcher.EnableRaisingEvents = true;
+            watched = file;
         }
         catch (Exception e) { GLog.Write("Dateiwaechter: " + e.Message); }
     }
@@ -1751,6 +1917,7 @@ class GoogleBackground
             if (now != null && now == lastWritten) return;       // eigenes Schreiben
         }
         catch { }
+        Interlocked.Exchange(ref lastEventTicks, DateTime.UtcNow.Ticks);
         wake.Set();
     }
 
@@ -1758,8 +1925,84 @@ class GoogleBackground
     public static bool Wanted(string res) { return GConf.Load(res).GoogleOn; }
 }
 
+// ---------- Fenster dieses Programms ----------
+// Rainmeter startet es versteckt (RunCommand State=Hide); dann verschluckt Windows das erste Anzeigen.
+class TbForm : Form
+{
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+
+    protected TbForm()
+    {
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false; MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterScreen;
+        TopMost = true;
+        BackColor = System.Drawing.Color.FromArgb(28, 26, 34);
+        ForeColor = System.Drawing.Color.FromArgb(236, 233, 241);
+        Font = new System.Drawing.Font("Segoe UI", 11f);
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        ShowWindow(Handle, 5);      // SW_SHOW
+        SetForegroundWindow(Handle);
+    }
+
+    protected Button MakeButton(string text, int left, int top, int width, bool primary)
+    {
+        var b = new Button { Text = text, Width = width, Height = 36, Left = left, Top = top, FlatStyle = FlatStyle.Flat,
+            BackColor = primary ? System.Drawing.Color.FromArgb(220, 80, 165) : System.Drawing.Color.FromArgb(45, 42, 54),
+            ForeColor = primary ? System.Drawing.Color.White : ForeColor };
+        if (primary) b.FlatAppearance.BorderSize = 0;
+        else b.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(80, 76, 92);
+        return b;
+    }
+}
+
+// Warten auf die Anmeldung im Browser - mit "Abbrechen", damit niemand 5 Minuten festhaengt
+class LoginWait : TbForm
+{
+    readonly GoogleAuth auth;
+    readonly Label info;
+    bool ok;
+
+    LoginWait(GoogleAuth a)
+    {
+        auth = a;
+        Text = "Task Board – Anmeldung bei Google";
+        info = new Label { Left = 20, Top = 18, Width = 500, Height = 110,
+            Text = "Dein Browser öffnet sich. Bitte melde dich dort bei Google an und erlaube Task Board den Zugriff.\n\n" +
+                   "Bei „Google hat diese App nicht überprüft“: auf „Erweitert“ und dann auf „Zu Task Board wechseln“ klicken." };
+        Controls.Add(info);
+        Button cancel = MakeButton("Abbrechen", 20, 140, 130, false);
+        cancel.Click += delegate { auth.CancelLogin = true; info.Text = "Wird abgebrochen …"; };
+        Controls.Add(cancel);
+        ClientSize = new System.Drawing.Size(540, 192);
+        FormClosing += delegate { auth.CancelLogin = true; };
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        var t = new Thread(delegate ()
+        {
+            bool r = auth.Login(300);
+            try { BeginInvoke((MethodInvoker)delegate { ok = r; Close(); }); } catch { }
+        });
+        t.IsBackground = true;
+        t.Start();
+    }
+
+    public static bool Run(GoogleAuth a)
+    {
+        using (var f = new LoginWait(a)) { f.ShowDialog(); return f.ok; }
+    }
+}
+
 // ---------- Auswahl der Google-Liste (kleines dunkles Fenster) ----------
-class ListPicker : Form
+class ListPicker : TbForm
 {
     readonly List<RadioButton> radios = new List<RadioButton>();
     readonly List<string[]> lists;
@@ -1769,14 +2012,6 @@ class ListPicker : Form
     {
         this.lists = lists;
         Text = "Task Board – Google-Liste";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false; MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterScreen;
-        TopMost = true;
-        BackColor = System.Drawing.Color.FromArgb(28, 26, 34);
-        ForeColor = System.Drawing.Color.FromArgb(236, 233, 241);
-        Font = new System.Drawing.Font("Segoe UI", 11f);
-        AutoScaleMode = AutoScaleMode.Dpi;
         int y = 18;
         var head = new Label { Text = "In welcher Google-Liste sollen deine Aufgaben liegen?", AutoSize = true, Left = 20, Top = y };
         Controls.Add(head);
@@ -1798,10 +2033,8 @@ class ListPicker : Form
         note.Font = new System.Drawing.Font("Segoe UI", 9.5f);
         Controls.Add(note);
         y += 36;
-        var ok = new Button { Text = "Übernehmen", Width = 130, Height = 36, Left = 20, Top = y, FlatStyle = FlatStyle.Flat, BackColor = System.Drawing.Color.FromArgb(220, 80, 165), ForeColor = System.Drawing.Color.White };
-        ok.FlatAppearance.BorderSize = 0;
-        var cancel = new Button { Text = "Abbrechen", Width = 120, Height = 36, Left = 160, Top = y, FlatStyle = FlatStyle.Flat, BackColor = System.Drawing.Color.FromArgb(45, 42, 54), ForeColor = ForeColor };
-        cancel.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(80, 76, 92);
+        Button ok = MakeButton("Übernehmen", 20, y, 130, true);
+        Button cancel = MakeButton("Abbrechen", 160, y, 120, false);
         ok.Click += delegate { Choose(); };
         cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
         Controls.Add(ok); Controls.Add(cancel);
@@ -1822,7 +2055,9 @@ class ListPicker : Form
     // gewaehlte Liste {id, name}; neue Liste wird hier angelegt; null = abgebrochen
     public static string[] Pick(TasksApi api, string current)
     {
-        var lists = api.Lists().Select(l => new[] { GJson.Str(l, "id"), GJson.Str(l, "title") ?? "" }).ToList();
+        // Name landet in prefs.inc und auf der Kommandozeile des Setups: keine Zeilenumbrueche, Tabs, Anfuehrungszeichen
+        var lists = api.Lists().Select(l => new[] { GJson.Str(l, "id"),
+            Regex.Replace(GJson.Str(l, "title") ?? "", "[\\r\\n\\t]", " ").Replace('"', '\'') }).ToList();
         using (var f = new ListPicker(lists, current ?? ""))
         {
             if (f.ShowDialog() != DialogResult.OK) return null;
@@ -1949,10 +2184,11 @@ static class GoogleCli
                 // schreibt nur "id\tname" in die Datei (die Einstellungen schreibt dann das Setup).
                 case "--google-connect":
                 {
+                    Application.EnableVisualStyles();
                     string outFile = args.Length > 2 && args[1] == "--out" ? args[2] : null;
                     if (!auth.Connected || outFile != null)
                     {
-                        if (!auth.Login(300))
+                        if (!LoginWait.Run(auth))
                         {
                             GLog.Write("Anmeldung fehlgeschlagen: " + auth.LastError);
                             if (outFile == null) GStatus.Write(exeDir, "aus", "Nicht verbunden: " + auth.LastError, false);
@@ -1969,6 +2205,7 @@ static class GoogleCli
                 }
                 case "--google-pick-list":
                 {
+                    Application.EnableVisualStyles();
                     string current = SkinIni.Get(SkinIni.Read(Path.Combine(exeDir, "prefs.inc")), "GoogleList", "");
                     string[] pick = ListPicker.Pick(api, current);
                     if (pick == null) { Out("abgebrochen"); return 1; }
@@ -2003,6 +2240,11 @@ static class GoogleCli
                     GLog.Write("abgemeldet");
                     Out("ok");
                     return 0;
+#if DEV
+                case "--google-export-token":
+                    File.WriteAllText(args[1], auth.DevRefreshToken(), new UTF8Encoding(false));
+                    return 0;
+#endif
                 case "--google-parse":
                     // Test ohne Google: Datei zerlegen und wieder zusammensetzen (muss genau gleich sein)
                     string content = GoogleSync.ReadText(args[1]);
@@ -2057,6 +2299,13 @@ static class GoogleCli
     // Liste merken und Abgleich einschalten (neue Liste = neuer gemeinsamer Stand)
     static int TurnOn(string res, string[] pick)
     {
+        var old = SkinIni.Read(Path.Combine(res, "prefs.inc"));
+        if (SkinIni.Get(old, "GoogleList", "") != pick[0] && SkinIni.Get(old, "ObsidianOn", "1") == "0")
+        {
+            // nur Google: die Kopie auf diesem PC gehoert zur alten Liste - sie wird aus der neuen Liste neu gefuellt
+            GoogleSync.WriteText(GConf.LocalTodo, "# Todo\n");
+            try { File.Delete(GConf.StatePath); } catch { }
+        }
         SkinIni.Set(Path.Combine(res, "prefs.inc"), new Dictionary<string, string> { { "GoogleOn", "1" }, { "GoogleList", pick[0] }, { "GoogleListName", pick[1] } });
         GStatus.Write(res, "ok", "Verbunden · Liste „" + pick[1] + "“ · wird abgeglichen …", true);
         GLog.Write("Liste gewaehlt: " + pick[0]);

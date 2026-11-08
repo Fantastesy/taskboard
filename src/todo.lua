@@ -646,7 +646,7 @@ local function render(openCount, doneCount)
 		local t = display[i]
 		if t then
 			local count = #t.notes
-			local open = expanded[t.text]
+			local open = expanded[stripMarker(t.text)]
 			local subsDone = 0
 			for _, sub in ipairs(t.subs) do if sub.done then subsDone = subsDone + 1 end end
 
@@ -826,20 +826,22 @@ local function refresh(force)
 end
 
 -- Punkt wiederfinden, auch wenn die Datei inzwischen geaendert wurde
+-- (gleich = gleich ohne Google-Kennung: der Abgleich kann sie anhaengen, waehrend hier etwas offen ist)
+local function sameLine(a, b) return a == b or (a ~= nil and b ~= nil and stripMarker(a) == stripMarker(b)) end
 local function findTask(lineNo, orig)
 	for _, t in ipairs(display) do
-		if t.line == lineNo and lines[t.line] == orig then return t end
+		if t.line == lineNo and sameLine(lines[t.line], orig) then return t end
 	end
 	for _, t in ipairs(display) do
-		if lines[t.line] == orig then return t end
+		if sameLine(lines[t.line], orig) then return t end
 	end
 end
 
 -- Zeile innerhalb eines Punkts (Notiz oder Unteraufgabe) wiederfinden
 local function findChild(t, lineNo, orig)
-	if lines[lineNo] == orig and lineNo > t.line and lineNo <= t.last then return lineNo end
+	if sameLine(lines[lineNo], orig) and lineNo > t.line and lineNo <= t.last then return lineNo end
 	for k = t.line + 1, t.last do
-		if lines[k] == orig then return k end
+		if sameLine(lines[k], orig) then return k end
 	end
 end
 
@@ -984,13 +986,14 @@ local function checkReminders()
 	for _, t in ipairs(display) do
 		local h, mi = timeOf(t.text)
 		local day = dueOf(t.text)
-		local again = snoozed[t.text] and os.time() >= snoozed[t.text]
-		if not t.done and h and day and (not notified[t.text] or again)
+		local key = stripMarker(t.text)        -- ohne Google-Kennung: sonst kaeme die Erinnerung nach dem ersten Abgleich doppelt
+		local again = snoozed[key] and os.time() >= snoozed[key]
+		if not t.done and h and day and (not notified[key] or again)
 			and (day < today() or (day == today() and now.hour * 60 + now.min >= h * 60 + mi - lead)) then
-			notified[t.text] = true
-			snoozed[t.text] = nil
+			notified[key] = true
+			snoozed[key] = nil
 			reminderCount = reminderCount + 1
-			reminderIds[reminderCount] = t.text
+			reminderIds[reminderCount] = key
 			local name = trim(pretty(stripDue(stripStamps(t.text)))):gsub('["|~]', '')
 			due[#due + 1] = reminderCount .. '~' .. name .. string.format(' (%02d:%02d)', h, mi)
 		end
@@ -1050,7 +1053,7 @@ function ToastAction(action, id)
 	if action ~= 'done' then return end
 	refresh(true)
 	for _, t in ipairs(display) do
-		if t.text == key and not t.done then
+		if stripMarker(t.text) == key and not t.done then
 			flip(t.line)
 			save()
 			refresh(true)
@@ -1065,7 +1068,7 @@ function ToggleSub(k)
 	if not sm then return end
 	local orig = lines[sm.line]
 	refresh(true)
-	if lines[sm.line] ~= orig then return end
+	if not sameLine(lines[sm.line], orig) then return end
 	flip(sm.line)
 	save()
 	refresh(true)
@@ -1083,7 +1086,7 @@ end
 function ToggleNotes(i)
 	local t = display and display[i]
 	if not t then return end
-	expanded[t.text] = not expanded[t.text] or nil
+	expanded[stripMarker(t.text)] = not expanded[stripMarker(t.text)] or nil
 	render(lastOpen, lastDone)
 end
 
@@ -1266,7 +1269,7 @@ function DialogDone()
 		for _, n in ipairs(notes) do block[#block + 1] = '    - ' .. n end
 		-- mit Datum: oben nach Faelligkeit einsortieren, sonst ans Ende
 		if (r.date or '') == '' or not placeDated(block, dueTimeOf(text)) then insertAtEnd(block) end
-		if #notes > 0 then expanded[text] = true end
+		if #notes > 0 then expanded[stripMarker(text)] = true end
 	else
 		-- Punkt neu zusammensetzen: Kopfzeile, Unteraufgaben wie gehabt, dann die Notizen aus dem Formular
 		local indent = lines[t.line]:match('^(%s*)')
@@ -1274,7 +1277,7 @@ function DialogDone()
 		local block = { lines[t.line]:match('^(%s*[-*+] %[[ xX]%])') .. ' ' .. text }
 		for _, sub in ipairs(t.subs) do block[#block + 1] = lines[sub.line] end
 		for _, n in ipairs(notes) do block[#block + 1] = indent .. '    - ' .. n end
-		if expanded[t.text] then expanded[text] = true end
+		if expanded[stripMarker(t.text)] then expanded[stripMarker(text)] = true end
 		for k = t.last, t.line, -1 do table.remove(lines, k) end
 		-- Termin geaendert: offenen Punkt neu nach Faelligkeit einsortieren, sonst bleibt er an seinem Platz
 		local moved = false
@@ -1353,7 +1356,7 @@ function FilePicked()
 		end
 	end
 	if pos == t.last then return end
-	expanded[t.text] = true
+	expanded[stripMarker(t.text)] = true
 	save()
 	refresh(true)
 end
@@ -1376,8 +1379,8 @@ function SaveEdit()
 			if not archive({ blockOf(t, '-') }) then return refresh(true) end
 			for k = t.last, t.line, -1 do table.remove(lines, k) end
 		else
-			text = text .. e.stamps
-			if expanded[t.text] then expanded[text] = true end
+			text = text .. stampsOf(t.text)       -- Stempel und Kennung vom aktuellen Stand der Zeile
+			if expanded[stripMarker(t.text)] then expanded[stripMarker(text)] = true end
 			lines[t.line] = e.orig:match('^(%s*[-*+] %[[ xX]%])') .. ' ' .. text
 		end
 
@@ -1389,8 +1392,11 @@ function SaveEdit()
 		if text == '' then
 			table.remove(lines, ln)
 		else
-			local prefix = e.orig:match('^(%s*[-*+] %[[ xX]%] )') or e.orig:match('^(%s*[-*+] )') or e.orig:match('^(%s*)')
-			lines[ln] = prefix .. text .. (e.stamps or '')
+			-- Haekchen, Stempel und Kennung vom aktuellen Stand der Zeile (der Abgleich kann sie inzwischen geaendert haben)
+			local cur = lines[ln]
+			local prefix = cur:match('^(%s*[-*+] %[[ xX]%] )') or cur:match('^(%s*[-*+] )') or cur:match('^(%s*)')
+			local _, curText = cur:match(CHECK)
+			lines[ln] = prefix .. text .. (curText and stampsOf(curText) or '')
 		end
 
 	elseif e.mode == 'addnote' or e.mode == 'addsub' then
@@ -1405,7 +1411,7 @@ function SaveEdit()
 			table.insert(lines, pos + 1, indent .. '- [ ] ' .. text .. stamp(createdIcon))
 		else
 			table.insert(lines, t.last + 1, indent .. '- ' .. text)
-			expanded[t.text] = true
+			expanded[stripMarker(t.text)] = true
 		end
 	end
 

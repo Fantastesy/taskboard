@@ -1379,7 +1379,7 @@ Parameter=-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "#@#
 State=Hide
 OutputType=UTF8
 Timeout=-1
-FinishAction=[!Refresh TaskBoard][!Refresh TaskBoard\Formular][!Refresh]
+FinishAction=["#@#TaskBoardHotkey.exe" --google-sync-now][!Refresh TaskBoard][!Refresh TaskBoard\Formular][!Refresh]
 
 [MeterBg]
 Meter=Shape

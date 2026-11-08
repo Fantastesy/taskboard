@@ -355,6 +355,11 @@ try {
                     }
                 }
             }
+            # "Nur Google" schon eingerichtet? (Update: dann keine Obsidian-Seiten und keine Vault-Pfade)
+            if ($rm) {
+                $p = Join-Path $rm.Skins "$SkinName\@Resources\prefs.inc"
+                if ((Test-Path -LiteralPath $p) -and (Select-String -LiteralPath $p -Encoding Unicode -Pattern '^\s*ObsidianOn\s*=\s*0\s*$' -Quiet)) { $lines += 'GoogleOnly=1' }
+            }
             [IO.File]::WriteAllLines($Out, $lines, (New-Object Text.UTF8Encoding($false)))
         }
 
@@ -595,6 +600,11 @@ exit `$p.ExitCode
                 Start-Sleep -Seconds 1
             }
             Get-Process TaskBoardHotkey, TodoHotkey -ErrorAction SilentlyContinue | Stop-Process -Force
+            # Google-Verbindung trennen (bei Google widerrufen, Schluessel auf diesem PC loeschen)
+            $hk = Join-Path $PSScriptRoot "$SkinName\@Resources\TaskBoardHotkey.exe"
+            if ((Test-Path -LiteralPath $hk) -and (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'TaskBoard\google-token.bin'))) {
+                try { Start-Process -FilePath $hk -ArgumentList '--google-logout' -WindowStyle Hidden -Wait } catch { Log "Abmelden: $_" }
+            }
             if ($rm) {
                 $link = Join-Path $rm.Skins $SkinName
                 $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
@@ -602,7 +612,12 @@ exit `$p.ExitCode
             }
             Remove-Item 'HKCU:\Software\Classes\taskboard' -Recurse -Force -ErrorAction SilentlyContinue
             Unregister-ScheduledTask -TaskName 'TaskBoard-Einblenden' -Confirm:$false -ErrorAction SilentlyContinue
-            Remove-Item (Join-Path $env:LOCALAPPDATA 'TaskBoard') -Recurse -Force -ErrorAction SilentlyContinue
+            # Programmdaten weg - eine Todo.md/Archiv von "nur Google" und Sicherungen bleiben (wie beim Vault: nichts geht verloren)
+            $state = Join-Path $env:LOCALAPPDATA 'TaskBoard'
+            foreach ($f in 'google-token.bin', 'google-sync.json', 'google.log', 'google.log.1', 'last-update-check.txt', 'update.log') {
+                Remove-Item (Join-Path $state $f) -Force -ErrorAction SilentlyContinue
+            }
+            if ((Test-Path -LiteralPath $state) -and -not (Get-ChildItem -LiteralPath $state -Force)) { Remove-Item -LiteralPath $state -Force -ErrorAction SilentlyContinue }
         }
     }
     exit 0

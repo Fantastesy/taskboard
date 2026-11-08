@@ -39,6 +39,14 @@ function Url($s) { [Uri]::EscapeDataString($s) }
 $inc = "[Variables]`r`nTodoFile=$todo`r`nArchiveFile=$archive`r`nVaultName=$(Split-Path $vault -Leaf)`r`nTodoUrl=$(Url $todo)`r`nArchiveUrl=$(Url $archive)`r`n"
 [IO.File]::WriteAllText((Join-Path $res 'settings.inc'), $inc, [Text.Encoding]::Unicode)
 
+# eine Datei gewaehlt = in Obsidian speichern (war vorher "nur Google" eingestellt, ist das jetzt vorbei)
+$prefs = Join-Path $res 'prefs.inc'
+if (Test-Path -LiteralPath $prefs) {
+    $t = [IO.File]::ReadAllText($prefs, [Text.Encoding]::Unicode)
+    $pat = '(?m)^[ \t]*ObsidianOn[ \t]*=[ \t]*0[ \t]*\r?$'
+    if ($t -match $pat) { [IO.File]::WriteAllText($prefs, ($t -replace $pat, "ObsidianOn=1`r"), [Text.Encoding]::Unicode) }
+}
+
 # fuer kuenftige Updates merken (das Setup liest diese Werte)
 New-Item -Path 'HKCU:\Software\TaskBoard' -Force | Out-Null
 Set-ItemProperty 'HKCU:\Software\TaskBoard' -Name Vault -Value $vault

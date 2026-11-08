@@ -145,7 +145,8 @@ local function storeView()
 	local goo = SKIN:GetVariable('GoogleOn') == '1'
 	set('StoreObsText', 'Text', (obs and '✓ ' or '') .. 'Obsidian')
 	set('StoreGoogleText', 'Text', (goo and '✓ ' or '') .. 'Google Tasks')
-	set('FileNow', 'Text', obs and (SKIN:GetVariable('TodoFile') or '') or 'Nur bei Google gespeichert (mit einer Kopie auf diesem PC).')
+	set('FileNow', 'Text', obs and (SKIN:GetVariable('TodoFile') or '')
+		or (goo and 'Nur bei Google gespeichert (mit einer Kopie auf diesem PC).' or 'Nur auf diesem PC gespeichert.'))
 	show('File1', obs); show('File1Text', obs)
 	if not busy then set('GoogleInfo', 'Text', gText ~= '' and gText or 'Nicht mit Google verbunden.') end
 	show('GList', gConnected); show('GListText', gConnected)
@@ -215,7 +216,9 @@ function GoogleDone()
 	busy = false
 	local out = SKIN:GetMeasure('MeasureGoogle'):GetStringValue() or ''
 	if out:find('kein%-vault') then
-		return info('Es ist noch keine Todo-Datei in Obsidian eingerichtet – bitte „Andere Datei wählen …“ benutzen.')
+		-- noch nie eine Datei in Obsidian eingerichtet: jetzt eine waehlen (choose-todo.ps1 schaltet Obsidian dann ein)
+		info('Bitte die Todo-Datei in deinem Obsidian-Vault wählen …')
+		return SKIN:Bang('!CommandMeasure', 'MeasureChoose', 'Run')
 	end
 	reloadAll()
 end
