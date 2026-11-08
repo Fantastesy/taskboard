@@ -17,6 +17,7 @@ Window {
     property var app
     readonly property var cfg: Plasmoid.configuration
 
+    function chooseFile() { fileDialog.open(); }
     title: "Task Board – Einstellungen"
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
     color: "transparent"
@@ -330,15 +331,54 @@ Window {
                         text: dlg.recording ? "Jetzt die neue Kombination drücken (mit Strg, Alt oder Meta) · Esc = abbrechen"
                                             : "Zum Ändern auf das Kürzel klicken und die neue Kombination drücken (Esc = abbrechen)."
                     }
+                    // Speichern in: zwei Haekchen (mindestens eins an), Logik in main.qml storeClick()
                     Setting {
-                        caption: "Todo-Datei"
+                        caption: "Speichern in"
                         options: []
                     }
-                    Small { text: dlg.app.todoFile; elide: Text.ElideMiddle; wrapMode: Text.NoWrap }
+                    RowLayout {
+                        spacing: Kirigami.Units.smallSpacing * 1.5
+                        Chip {
+                            selected: dlg.app.obsidianOn
+                            text: (dlg.app.obsidianOn ? "✓ " : "") + "Obsidian"
+                            onClicked: dlg.app.storeClick("obsidian")
+                        }
+                        Chip {
+                            selected: dlg.app.googleOn
+                            text: (dlg.app.googleOn ? "✓ " : "") + "Google Tasks"
+                            onClicked: dlg.app.storeClick("google")
+                        }
+                    }
+                    Small {
+                        text: dlg.app.obsidianOn ? dlg.app.todoFile
+                            : dlg.app.googleOn ? "Nur bei Google gespeichert (mit einer Kopie auf diesem PC)."
+                            : "Nur auf diesem PC gespeichert."
+                        elide: Text.ElideMiddle
+                        wrapMode: Text.NoWrap
+                    }
                     Chip {
+                        visible: dlg.app.obsidianOn
                         Layout.topMargin: Kirigami.Units.smallSpacing
                         text: "Andere Datei wählen …"
                         onClicked: fileDialog.open()
+                    }
+                    Small {
+                        Layout.topMargin: Kirigami.Units.smallSpacing
+                        text: dlg.app.googleHint !== "" ? dlg.app.googleHint
+                            : dlg.app.googleStatus !== "" ? dlg.app.googleStatus : "Nicht mit Google verbunden."
+                    }
+                    RowLayout {
+                        visible: dlg.app.googleConnected
+                        Layout.topMargin: Kirigami.Units.smallSpacing
+                        spacing: Kirigami.Units.smallSpacing * 1.5
+                        Chip {
+                            text: "Liste wählen …"
+                            onClicked: dlg.app.googleRun("pick-list", "Einen Moment – Listen werden geladen …")
+                        }
+                        Chip {
+                            text: "Verbindung trennen"
+                            onClicked: dlg.app.googleRun("disconnect", "Verbindung wird getrennt …")
+                        }
                     }
                     Setting {
                         caption: "Automatische Updates"
@@ -386,7 +426,7 @@ Window {
                     ["Ziehen", "Eintrag mit der Maus an eine andere Stelle schieben (neue Einträge mit Datum kommen von selbst nach oben)"],
                     ["+ Neuer Eintrag", "neuen Eintrag anlegen, überall auch mit dem Tastenkürzel (siehe oben)"],
                     ["Enter", "speichert den Eintrag sofort (Datum vorher wählen oder später ergänzen)"],
-                    ["Titel „Todo“", "Liste in Obsidian öffnen"],
+                    ["Titel „Todo“", dlg.app.obsidianOn ? "Liste in Obsidian öffnen" : "Google Tasks öffnen"],
                     ["Seitenleiste", "Maus an den Bildschirmrand – die Liste gleitet herein"],
                     ["Anmelden, Aufwachen, Entsperren", "die Liste kommt kurz von selbst"],
                     ["Farben", "orange = heute fällig, rot = überfällig"],

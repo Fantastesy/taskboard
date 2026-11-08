@@ -222,8 +222,12 @@ end
 local RULES = { ['täglich'] = 'täglich', taeglich = 'täglich', werktags = 'werktags',
 	['wöchentlich'] = 'wöchentlich', woechentlich = 'wöchentlich', monatlich = 'monatlich',
 	['jährlich'] = 'jährlich', jaehrlich = 'jährlich' }
+-- Kennung der Google-Aufgabe "%%tb:<id>%%" (Abgleich in google.cs)
+local MARKER = '%s*%%%%tb:[%w_=%-]+%%%%'
+local function stripMarker(text) return (text:gsub(MARKER, '')) end
+-- ohne Kennung: sonst gehoerte sie zur Regel, wenn kein weiteres Symbol dazwischen steht
 local function ruleOf(text)
-	local r = text:match(repeatIcon .. '%s*([^\226\240]*[^%s\226\240])')
+	local r = stripMarker(text):match(repeatIcon .. '%s*([^\226\240]*[^%s\226\240])')
 	return r
 end
 local function timeOf(text)
@@ -276,8 +280,6 @@ local DATE = '%d%d%d%d%-%d%d%-%d%d'
 local function stamp(icon) return ' ' .. icon .. ' ' .. os.date('%Y-%m-%d') end
 -- Kennung der Google-Aufgabe "%%tb:<id>%%" (Google-Abgleich, google.cs): wie die Stempel unsichtbar,
 -- bleibt beim Bearbeiten erhalten, kommt nicht ins Archiv
-local MARKER = '%s*%%%%tb:[%w_=%-]+%%%%'
-local function stripMarker(text) return (text:gsub(MARKER, '')) end
 local function stripStamps(text)
 	for _, icon in ipairs({ createdIcon, doneIcon }) do text = text:gsub('%s*' .. icon .. '%s*' .. DATE, '') end
 	return stripMarker(text)
@@ -778,7 +780,7 @@ local function render(openCount, doneCount)
 		SKIN:Bang('!ShowMeter', 'MeterMore')
 		y = y + rowH
 	elseif hidden > 0 then
-		SKIN:Bang('!SetOption', 'MeterMore', 'Text', '+ ' .. hidden .. ' weitere in Obsidian')
+		SKIN:Bang('!SetOption', 'MeterMore', 'Text', '+ ' .. hidden .. (SKIN:GetVariable('ObsidianOn') ~= '0' and ' weitere in Obsidian' or ' weitere bei Google'))
 		SKIN:Bang('!SetOption', 'MeterMore', 'Y', y)
 		SKIN:Bang('!ShowMeter', 'MeterMore')
 		y = y + rowH

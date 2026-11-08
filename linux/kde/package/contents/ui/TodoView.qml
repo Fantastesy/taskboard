@@ -160,7 +160,7 @@ Rectangle {
                 font.bold: true
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: view.app.openInObsidian() }
-                PC3.ToolTip { text: "In Obsidian öffnen" }
+                PC3.ToolTip { text: view.app.obsidianOn ? "In Obsidian öffnen" : "Google Tasks öffnen" }
             }
             // Zahnrad: Einstellungen (wie unter Windows)
             Chip {
@@ -232,7 +232,7 @@ Rectangle {
                 Layout.leftMargin: Kirigami.Units.smallSpacing
                 Layout.topMargin: Kirigami.Units.smallSpacing
                 color: P.muted(Plasmoid.configuration.opacity <= 1)
-                text: moreLabel.hidden > 0 ? "+ " + moreLabel.hidden + " weitere in Obsidian" : "Alles erledigt"
+                text: moreLabel.hidden > 0 ? "+ " + moreLabel.hidden + (view.app.obsidianOn ? " weitere in Obsidian" : " weitere bei Google") : "Alles erledigt"
                 HoverHandler { cursorShape: moreLabel.hidden > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { onTapped: if (moreLabel.hidden > 0) view.app.openInObsidian() }
             }

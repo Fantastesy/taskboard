@@ -17,6 +17,7 @@ PLUGIN_ID="io.github.fantastesy.taskboard"
 SHORTCUT="Meta+Shift+T"
 CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/taskboard"
 CONF="$CONF_DIR/config"
+GCONF="$CONF_DIR/google"     # Google Tasks / Obsidian an-aus (schreibt das Setup beim ersten Einrichten, danach das Zahnrad)
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/taskboard"
 PLASMOID_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/plasma/plasmoids/$PLUGIN_ID"
 LOG="${TMPDIR:-/tmp}/taskboard-setup.log"
@@ -214,11 +215,12 @@ trap 'rm -rf "$WORK"' EXIT
 SELF="$(readlink -f "$0")"
 if grep -q '^__PAYLOAD_BELOW__$' "$SELF" 2>/dev/null; then
     sed -n '/^__PAYLOAD_BELOW__$/,$p' "$SELF" | tail -n +2 | base64 -d | tar -xz -C "$WORK" || fail "Das Setup ist beschädigt. Bitte neu herunterladen."
-    PKG="$WORK/package"; UPD="$WORK/update.sh"; VERSION="$(cat "$WORK/version.txt")"; REPO="$(cat "$WORK/repo.txt")"
+    PKG="$WORK/package"; UPD="$WORK/update.sh"; GPY="$WORK/google-sync.py"; VERSION="$(cat "$WORK/version.txt")"; REPO="$(cat "$WORK/repo.txt")"
 else
     here="$(dirname "$SELF")"
-    PKG="$here/package"; UPD="$here/update.sh"; VERSION="dev"; REPO=""
+    PKG="$here/package"; UPD="$here/update.sh"; GPY="$here/google-sync.py"; VERSION="dev"; REPO=""
 fi
+GCLIENT="$(dirname "$GPY")/google-client.json"     # Zugang des Programms zu Google (fehlt in Entwicklerfassungen)
 [ -f "$PKG/metadata.json" ] || fail "Widget-Dateien nicht gefunden."
 
 # ---------- Anzeige einrichten: Seitenleiste, Desktop oder beides ----------
@@ -281,7 +283,16 @@ Deine Todo.md und das Archiv bleiben erhalten." || exit 0
 });"
     kpackagetool6 -t Plasma/Applet -r "$PLUGIN_ID" >/dev/null 2>&1 || rm -rf "$PLASMOID_DIR"
     kpackagetool6 -t Plasma/Applet -r "$OLD_ID" >/dev/null 2>&1 || rm -rf "$OLD_PLASMOID_DIR"
-    rm -rf "$DATA_DIR" "$CONF_DIR"
+    # Google-Verbindung trennen (bei Google widerrufen, Schluessel loeschen)
+    if [ -f "$DATA_DIR/google-sync.py" ] && [ -f "$CONF_DIR/google-token.json" ] && command -v python3 >/dev/null 2>&1; then
+        python3 "$DATA_DIR/google-sync.py" logout >/dev/null 2>&1
+    fi
+    # Programmdaten weg - eine Todo.md/Archiv von "nur Google" und Sicherungen bleiben (wie beim Vault: nichts geht verloren)
+    if [ -d "$DATA_DIR" ]; then
+        find "$DATA_DIR" -mindepth 1 -maxdepth 1 ! -name Todo.md ! -name Todo-Archiv.md ! -name Sicherung -exec rm -rf {} +
+        rmdir "$DATA_DIR" 2>/dev/null
+    fi
+    rm -rf "$CONF_DIR"
     rm -f "$MENU_ENTRY" "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/taskboard-update.desktop"
     info "$APP wurde entfernt. Deine Todo.md und das Archiv sind noch da."
     exit 0
@@ -404,12 +415,64 @@ if [ -f "$CONF" ]; then
     TODO_DIR="$(dirname "$(sed -n 's/^TODO_FILE=//p' "$CONF")")"
     MODE="$(sed -n 's/^MODE=//p' "$CONF")"
 fi
+# Speicherort: beim ersten Einrichten waehlbar; "nur Google" bleibt bei spaeteren Laeufen, wie es ist
+FRESH=0; [ -f "$CONF" ] || FRESH=1
+USE_OBSIDIAN=1; GOOGLE_LIST=""; GOOGLE_LIST_NAME=""
+[ -f "$GCONF" ] && grep -q '^OBSIDIAN_ON=0' "$GCONF" && USE_OBSIDIAN=0
+if [ -f "$GCONF" ] && grep -q '^GOOGLE_ON=1' "$GCONF"; then
+    GOOGLE_LIST="$(sed -n 's/^GOOGLE_LIST=//p' "$GCONF")"
+    GOOGLE_LIST_NAME="$(sed -n 's/^GOOGLE_LIST_NAME=//p' "$GCONF")"
+fi
 
 if [ "$SILENT" = 0 ]; then
     info "Willkommen bei $APP!
 
-Damit bekommst du eine Todo-Liste als KDE-Widget, die direkt in deinem Obsidian-Vault gespeichert wird."
+Damit bekommst du eine Todo-Liste als KDE-Widget – gespeichert in deinem Obsidian-Vault, in Google Tasks oder in beiden."
 
+    # zwei Haekchen, mindestens eins
+    while [ "$FRESH" = 1 ]; do
+        if [ "$HAVE_KDIALOG" = 1 ]; then
+            sel="$(kdialog --title "$APP" --checklist "Wo sollen deine Aufgaben gespeichert werden?
+
+Beides angehakt: Die Liste wird in beide Richtungen abgeglichen – was du in Obsidian änderst, landet bei Google, und was du am Handy änderst, steht danach auch in Obsidian. Später umstellbar im Zahnrad neben „Todo“." \
+                obsidian "Obsidian – als Todo.md in deinem Vault" on \
+                google "Google Tasks – auch am Handy, Anmeldung mit deinem Google-Konto" off)" || exit 0
+        else
+            sel=""
+            read -r -p "In Obsidian speichern? [J/n] " r; case "$r" in n*|N*) ;; *) sel="obsidian" ;; esac
+            read -r -p "In Google Tasks speichern? [j/N] " r; case "$r" in j*|J*|y*) sel="$sel google" ;; esac
+        fi
+        case "$sel" in *obsidian*) USE_OBSIDIAN=1 ;; *) USE_OBSIDIAN=0 ;; esac
+        case "$sel" in
+            *google*)
+                if ! command -v python3 >/dev/null 2>&1; then
+                    info "Für Google Tasks wird Python 3 gebraucht (Paket python3). Bitte installieren und das Setup noch einmal starten."
+                    continue
+                fi
+                if [ ! -f "$GCLIENT" ]; then
+                    info "Diese Fassung enthält keinen Google-Zugang. Bitte die fertige Version von GitHub nehmen."
+                    continue
+                fi
+                if python3 "$GPY" connect --out "$WORK/google-list" >>"$LOG" 2>&1; then
+                    GOOGLE_LIST="$(cut -f1 "$WORK/google-list")"
+                    GOOGLE_LIST_NAME="$(cut -f2 "$WORK/google-list")"
+                else
+                    [ "$USE_OBSIDIAN" = 1 ] && ask_yesno "Die Anmeldung bei Google hat nicht geklappt.
+
+Ohne Google weiter? Du kannst Google später im Zahnrad neben „Todo“ verbinden." && break
+                    continue
+                fi
+                ;;
+            *obsidian*) ;;
+            *)
+                info "Bitte mindestens einen Speicherort anhaken."
+                continue
+                ;;
+        esac
+        break
+    done
+
+    if [ "$USE_OBSIDIAN" = 1 ]; then
     if ! obsidian_installed; then
         if ask_yesno "Obsidian ist nicht installiert. Soll es mitinstalliert werden?
 
@@ -463,6 +526,10 @@ Damit bekommst du eine Todo-Liste als KDE-Widget, die direkt in deinem Obsidian-
 $VAULT"
     done
     [ "$NEW_VAULT" = 1 ] && register_vault "$VAULT"
+    else
+        # nur Google: die Liste arbeitet mit einer Kopie auf diesem PC
+        [ -n "$VAULT" ] && [ -n "$TODO_DIR" ] || { VAULT="$DATA_DIR"; TODO_DIR="$DATA_DIR"; }
+    fi
 
     # Anzeige
     cur="${MODE:-panel}"
@@ -488,8 +555,18 @@ fi
 # ---------- Dateien ----------
 TODO_FILE="$TODO_DIR/Todo.md"
 ARCHIVE_FILE="$TODO_DIR/Todo-Archiv.md"
+if [ "$SILENT" = 1 ] && [ -f "$CONF" ]; then
+    # Update: gewaehlte Dateien behalten (auch mit eigenem Namen)
+    t="$(sed -n 's/^TODO_FILE=//p' "$CONF")"; a="$(sed -n 's/^ARCHIVE_FILE=//p' "$CONF")"
+    [ -n "$t" ] && TODO_FILE="$t"
+    [ -n "$a" ] && ARCHIVE_FILE="$a"
+fi
 mkdir -p "$TODO_DIR"
-[ -f "$TODO_FILE" ] || printf '# Todo\n\n- [ ] Mein erster Punkt\n' > "$TODO_FILE"
+if [ "$USE_OBSIDIAN" = 1 ]; then
+    [ -f "$TODO_FILE" ] || printf '# Todo\n\n- [ ] Mein erster Eintrag\n' > "$TODO_FILE"
+else
+    [ -f "$TODO_FILE" ] || printf '# Todo\n' > "$TODO_FILE"
+fi
 [ -f "$ARCHIVE_FILE" ] || printf '# Todo-Archiv\n' > "$ARCHIVE_FILE"
 
 mkdir -p "$CONF_DIR"
@@ -501,6 +578,14 @@ TODO_FILE=$TODO_FILE
 ARCHIVE_FILE=$ARCHIVE_FILE
 MODE=${MODE:-panel}
 EOF
+# Speicherort beim ersten Einrichten festhalten (spaeter aendert das Zahnrad diese Datei, Updates lassen sie in Ruhe)
+if [ "$FRESH" = 1 ] && [ "$SILENT" = 0 ]; then
+    {
+        printf 'OBSIDIAN_ON=%s\n' "$USE_OBSIDIAN"
+        if [ -n "$GOOGLE_LIST" ]; then printf 'GOOGLE_ON=1\nGOOGLE_LIST=%s\nGOOGLE_LIST_NAME=%s\n' "$GOOGLE_LIST" "$GOOGLE_LIST_NAME"
+        else printf 'GOOGLE_ON=0\n'; fi
+    } > "$GCONF"
+fi
 
 # ---------- Widget installieren ----------
 FIRST_INSTALL=1
@@ -521,6 +606,9 @@ fi
 # Updates
 mkdir -p "$DATA_DIR"
 cp "$UPD" "$DATA_DIR/update.sh"; chmod +x "$DATA_DIR/update.sh"
+# Google-Abgleich (Widget ruft ihn auf) und Zugang des Programms zu Google
+[ -f "$GPY" ] && { cp "$GPY" "$DATA_DIR/google-sync.py"; chmod +x "$DATA_DIR/google-sync.py"; }
+[ -f "$GCLIENT" ] && cp "$GCLIENT" "$DATA_DIR/google-client.json"
 printf '%s\n' "$VERSION" > "$DATA_DIR/version.txt"
 printf '%s\n' "$REPO" > "$DATA_DIR/repo.txt"
 # Setup selbst aufheben: fuer "Anzeige umschalten" und "entfernen" (Rechtsklick-Menue, Startmenue)
@@ -584,11 +672,16 @@ else
         desktop) where="Die Liste liegt oben rechts auf deinem Desktop." ;;
         *) where="Die Liste liegt auf deinem Desktop und gleitet zusätzlich am rechten Bildschirmrand herein." ;;
     esac
+    if [ "$USE_OBSIDIAN" = 0 ]; then stored="Gespeichert wird bei Google Tasks (Liste „$GOOGLE_LIST_NAME“)."
+    elif [ -n "$GOOGLE_LIST" ]; then stored="Gespeichert wird in:
+$TODO_FILE
+und in Google Tasks (Liste „$GOOGLE_LIST_NAME“)."
+    else stored="Gespeichert wird in:
+$TODO_FILE"; fi
     info "Fertig!
 
 $where
-Gespeichert wird in:
-$TODO_FILE
+$stored
 
 Neuer Eintrag von überall: $SHORTCUT
 Anzeige, Farben und mehr: Zahnrad neben „Todo“.

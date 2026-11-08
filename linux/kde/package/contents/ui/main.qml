@@ -125,7 +125,7 @@ PlasmoidItem {
     }
     Plasmoid.contextualActions: [
         PlasmaCore.Action { text: "Neuer Eintrag"; icon.name: "list-add"; onTriggered: root.openForm(null) },
-        PlasmaCore.Action { text: "In Obsidian öffnen"; icon.name: "document-open"; onTriggered: root.openInObsidian() },
+        PlasmaCore.Action { text: root.obsidianOn ? "In Obsidian öffnen" : "Google Tasks öffnen"; icon.name: "document-open"; onTriggered: root.openInObsidian() },
         PlasmaCore.Action { text: "Einstellungen …"; icon.name: "configure"; onTriggered: root.openSettings() },
         PlasmaCore.Action { isSeparator: true },
         PlasmaCore.Action { text: "Task Board entfernen …"; icon.name: "edit-delete"; onTriggered: root.runSetup("--uninstall") }
@@ -200,10 +200,12 @@ PlasmoidItem {
             + 'while [ "$p" != "/" ] && [ -n "$p" ]; do [ -d "$p/.obsidian" ] && { v="$p"; break; }; p=$(dirname "$p"); done; '
             + 'mkdir -p "$d"; [ -f "$f" ] || printf "# Todo\\n\\n- [ ] Mein erster Eintrag\\n" > "$f"; '
             + '[ -f "$a" ] || printf "# Todo-Archiv\\n" > "$a"; '
-            + 'c="$HOME/.config/taskboard/config"; mkdir -p "$(dirname "$c")"; touch "$c"; '
+            + 'c="${XDG_CONFIG_HOME:-$HOME/.config}/taskboard/config"; mkdir -p "$(dirname "$c")"; touch "$c"; '
             + 'grep -v -E "^(VAULT|VAULT_NAME|TODO_FILE|ARCHIVE_FILE)=" "$c" > "$c.tmp"; '
-            + 'printf "VAULT=%s\\nVAULT_NAME=%s\\nTODO_FILE=%s\\nARCHIVE_FILE=%s\\n" "$v" "$(basename "$v")" "$f" "$a" >> "$c.tmp" && mv -f "$c.tmp" "$c"',
-            function () { lastContent = ""; model = null; loadConfig(); });
+            + 'printf "VAULT=%s\\nVAULT_NAME=%s\\nTODO_FILE=%s\\nARCHIVE_FILE=%s\\n" "$v" "$(basename "$v")" "$f" "$a" >> "$c.tmp" && mv -f "$c.tmp" "$c"; '
+            // eine Datei gewaehlt = in Obsidian speichern (war "nur Google" eingestellt, ist das jetzt vorbei)
+            + 'g="${XDG_CONFIG_HOME:-$HOME/.config}/taskboard/google"; [ -f "$g" ] && sed -i "s/^OBSIDIAN_ON=.*/OBSIDIAN_ON=1/" "$g"; true',
+            function () { googleHint = ""; lastContent = ""; model = null; loadConfig(); });
     }
 
     // Tastenkuerzel des Widgets (Setup traegt Meta+Shift+T ein) -> neuer Punkt
@@ -248,7 +250,7 @@ PlasmoidItem {
 
     // ---------- Einstellungen laden ----------
     function loadConfig() {
-        run('printf "HOME=%s\\n" "$HOME"; cat "$HOME/.config/taskboard/config" 2>/dev/null; command -v notify-send >/dev/null && echo NOTIFY=1; printf "TEST=%s\\n" "$TASKBOARD_TEST"; [ -f /tmp/taskboard-test.enable ] && echo TESTCMD=1; printf "APPVERSION=%s\\n" "$(head -n1 "${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/version.txt" 2>/dev/null)"',
+        run('printf "HOME=%s\\n" "$HOME"; cat "${XDG_CONFIG_HOME:-$HOME/.config}/taskboard/config" 2>/dev/null; command -v notify-send >/dev/null && echo NOTIFY=1; command -v python3 >/dev/null && echo PYTHON=1; printf "TEST=%s\\n" "$TASKBOARD_TEST"; [ -f /tmp/taskboard-test.enable ] && echo TESTCMD=1; printf "APPVERSION=%s\\n" "$(head -n1 "${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/version.txt" 2>/dev/null)"',
             function (code, out) {
                 var cfg = {};
                 out.split("\n").forEach(function (l) {
@@ -260,9 +262,11 @@ PlasmoidItem {
                 archiveFile = cfg.ARCHIVE_FILE || "";
                 vaultName = cfg.VAULT_NAME || "";
                 hasNotifySend = cfg.NOTIFY === "1";
+                hasPython = cfg.PYTHON === "1";
                 version = cfg.APPVERSION || "";
                 configMissing = todoFile === "";
                 refresh();
+                pollGoogle(function () { if (!root.syncRunning) root.runSync(); });
                 // nur fuer automatische Tests: TASKBOARD_TEST=new|edit oeffnet das Formular
                 if (cfg.TEST) testTimer.mode = cfg.TEST;
                 testCmds = cfg.TESTCMD === "1";
@@ -284,9 +288,11 @@ PlasmoidItem {
     }
 
     function setContent(c) {
+        var changed = c !== lastContent;
         lastContent = c;
         model = Core.parse(c);
         rebuildRows();
+        if (googleOn && changed && c !== lastSyncedContent) syncSoon.restart();
         // nach der Anmeldung einmal einblenden
         if (!startupRevealDone) { startupRevealDone = true; reveal(); }
         if (!Plasmoid.configuration.manualOrder && !migrationQueued) { migrationQueued = true; migrateOrder(); }
@@ -318,10 +324,11 @@ PlasmoidItem {
                 return { line: t.noteLines[k], orig: model.lines[t.noteLines[k]], text: Core.noteText(n),
                          link: Core.linkOf(n, vaultName, home) || "" };
             });
-            out.push({ key: t.text, line: t.line, orig: model.lines[t.line], done: t.done, title: Core.taskText(t.text),
+            var noteKey = Core.stripMarker(t.text);    // ohne Google-Kennung: bleibt aufgeklappt, wenn der Abgleich sie anhaengt
+            out.push({ key: noteKey, line: t.line, orig: model.lines[t.line], done: t.done, title: Core.taskText(t.text),
                        dueLabel: di.label, dueState: di.state, repeat: !!Core.ruleOf(t.text),
                        tags: t.tags.map(function (n) { return { name: n, color: tagColor(n) }; }),
-                       subs: subs, subsDone: subsDone, notes: notes, open: !!openNotes[t.text] });
+                       subs: subs, subsDone: subsDone, notes: notes, open: !!openNotes[noteKey] });
         });
         rows = out;
     }
@@ -494,7 +501,7 @@ PlasmoidItem {
             var t = Core.findTask(m, taskLine, taskOrig);
             if (!t) return false;
             Core.addChild(m, t, kind, text, new Date());
-            if (kind !== "sub") { var e = openNotes; e[t.text] = true; openNotes = e; }
+            if (kind !== "sub") { var e = openNotes; e[Core.stripMarker(t.text)] = true; openNotes = e; }
             return true;
         });
     }
@@ -530,9 +537,9 @@ PlasmoidItem {
             }
             var t = Core.findTask(m, line, orig);
             if (!t) return false;
-            var wasOpen = openNotes[t.text];
+            var wasOpen = openNotes[Core.stripMarker(t.text)];
             var nt = Core.editTask(m, t, values);
-            if (wasOpen) { var e2 = openNotes; e2[nt] = true; openNotes = e2; }
+            if (wasOpen) { var e2 = openNotes; e2[Core.stripMarker(nt)] = true; openNotes = e2; }
             return true;
         });
     }
@@ -550,6 +557,8 @@ PlasmoidItem {
 
     // ---------- Oeffnen ----------
     function openInObsidian(path) {
+        // nur Google: Titel oeffnet Google Tasks im Browser, das Archiv ist eine Datei auf diesem PC
+        if (!obsidianOn) { Qt.openUrlExternally(path ? "file://" + encodeURI(path) : "https://tasks.google.com/"); return; }
         Qt.openUrlExternally("obsidian://open?path=" + encodeURIComponent(path || todoFile));
     }
     function openLink(url) { if (url) Qt.openUrlExternally(url); }
@@ -576,7 +585,7 @@ PlasmoidItem {
         enqueue(function (m) {
             for (var i = 0; i < m.display.length; i++) {
                 var t = m.display[i];
-                if (t.text === key && !t.done) {
+                if (Core.stripMarker(t.text) === key && !t.done) {
                     Core.flip(m, t.line, new Date());
                     if (Core.ruleOf(t.text)) enqueue(function (mm) { return rollOp(mm); });
                     return true;
@@ -584,6 +593,112 @@ PlasmoidItem {
             }
             return false;
         });
+    }
+
+    // ---------- Google Tasks (google-sync.py, gleiche Regeln wie src/google.cs unter Windows) ----------
+    // Abgleich 3 Sekunden nach einer Aenderung an der Datei (wer in Obsidian tippt, dem wird nicht mitten in die Zeile
+    // geschrieben), sonst alle 2 Minuten. Google erlaubt dem ganzen Projekt 50.000 Anfragen pro Tag.
+    property bool googleOn: false
+    property bool obsidianOn: true
+    property bool googleConnected: false
+    property string googleStatus: ""
+    property string googleList: ""
+    property string googleListName: ""
+    property string googleHint: ""          // kurzer Hinweis statt der Statuszeile ("Browser oeffnet sich ...")
+    property bool googleBusy: false
+    property bool hasPython: true
+    property bool syncRunning: false
+    property bool syncAgain: false
+    property string lastSyncedContent: ""
+    readonly property string gpy: '"${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/google-sync.py"'
+
+    // Einstellung (~/.config/taskboard/google) und Stand des Abgleichs (google-status) lesen
+    function pollGoogle(after) {
+        run('cat "${XDG_CONFIG_HOME:-$HOME/.config}/taskboard/google" 2>/dev/null; echo "==S=="; cat "${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/google-status" 2>/dev/null; true',
+            function (code, out) {
+                var i = out.indexOf("==S==");
+                var kv = {};
+                out.substring(0, Math.max(i, 0)).split("\n").forEach(function (l) {
+                    var p = l.indexOf("=");
+                    if (p > 0) kv[l.substring(0, p).trim()] = l.substring(p + 1).trim();
+                });
+                var st = i < 0 ? [] : out.substring(i + 5).replace(/^\n/, "").split("\n");
+                var wasOn = googleOn;
+                googleOn = kv.GOOGLE_ON === "1";
+                obsidianOn = kv.OBSIDIAN_ON !== "0";
+                googleList = kv.GOOGLE_LIST || "";
+                googleListName = kv.GOOGLE_LIST_NAME || "";
+                googleConnected = st[1] === "1";
+                googleStatus = st.slice(2).join(" ").trim();
+                if (googleOn && !wasOn) runSync();
+                if (after) after();
+            });
+    }
+    function runSync() {
+        if (!googleOn || configMissing) return;
+        if (syncRunning) { syncAgain = true; return; }
+        syncRunning = true;
+        run('python3 ' + gpy + ' sync 2>/dev/null; true', function (code, out) {
+            syncRunning = false;
+            readFile(todoFile, function (c) {
+                // Was der Abgleich selbst geschrieben hat, loest keinen weiteren aus. Hat jemand waehrenddessen
+                // geaendert, passt die Pruefsumme nicht - dann geht es normal ueber syncSoon weiter.
+                if (c !== null && Qt.md5(c) === out.trim()) lastSyncedContent = c;
+                root.refresh();
+                pollGoogle();
+                if (syncAgain) { syncAgain = false; syncSoon.restart(); }
+            });
+        });
+    }
+    Timer { id: syncSoon; interval: 3000; onTriggered: root.runSync() }
+    Timer {
+        interval: 120000; running: root.googleOn; repeat: true
+        onTriggered: root.runSync()
+    }
+    Timer {
+        interval: settings.visible ? 2000 : 30000; running: true; repeat: true
+        onTriggered: root.pollGoogle()
+    }
+    Timer { id: hintTimer; interval: 6000; onTriggered: root.googleHint = "" }
+    function showHint(t) { googleHint = t; hintTimer.restart(); }
+
+    // connect | pick-list | disconnect | enable 0/1 | store google/obsidian
+    function googleRun(args, hint) {
+        if (googleBusy) return;
+        if (!hasPython) { showHint("Für Google Tasks wird Python 3 gebraucht (Paket python3)."); return; }
+        googleBusy = true;
+        hintTimer.stop();
+        googleHint = hint;
+        run('python3 ' + gpy + ' ' + args + ' 2>&1 | tail -n1', function (code, out) {
+            googleBusy = false;
+            googleHint = "";
+            if (out.indexOf("kein-vault") >= 0) {
+                // noch nie eine Datei in Obsidian eingerichtet: jetzt eine waehlen (chooseTodo schaltet Obsidian dann ein)
+                showHint("Bitte die Todo-Datei in deinem Obsidian-Vault wählen …");
+                settings.chooseFile();
+                return;
+            }
+            var bad = /^fehler: ?(.*)$/m.exec(out);
+            if (bad) showHint("Das hat nicht geklappt: " + bad[1]);
+            // die Datei kann sich geaendert haben (nur Google <-> Obsidian)
+            lastContent = "";
+            model = null;
+            loadConfig();
+        });
+    }
+    // Haekchen "Speichern in": mindestens eins bleibt an
+    function storeClick(which) {
+        if (googleBusy) return;
+        if (which === "google") {
+            if (googleOn) {
+                if (!obsidianOn) { showHint("Ohne Google braucht die Liste Obsidian – zuerst „Obsidian“ anhaken."); return; }
+                googleRun("enable 0", "");
+            } else if (googleConnected && googleList !== "") googleRun("enable 1", "");
+            else googleRun("connect", "Dein Browser öffnet sich – bitte bei Google anmelden und Task Board erlauben …");
+        } else if (obsidianOn) {
+            if (!googleOn) { showHint("Mindestens ein Speicherort muss angehakt sein."); return; }
+            googleRun("store google", "Wird umgestellt …");
+        } else googleRun("store obsidian", "Wird umgestellt …");
     }
 
     // ---------- Automatische Updates (update.sh prueft selbst hoechstens alle 6 Stunden) ----------
@@ -649,6 +764,11 @@ PlasmoidItem {
                 else if (c.indexOf("opacity=") === 0) Plasmoid.configuration.opacity = +c.substring(8);
                 else if (c.indexOf("tagedit=") === 0) settings.testTagEdit(c.substring(8));
                 else if (c.indexOf("formtags=") === 0) { form.tags = c.substring(9).split(","); }
+                else if (c.indexOf("store=") === 0) root.storeClick(c.substring(6));
+                else if (c === "gpick") root.googleRun("pick-list", "Einen Moment – Listen werden geladen …");
+                else if (c === "gdisconnect") root.googleRun("disconnect", "Verbindung wird getrennt …");
+                else if (c === "gstate") root.run('printf %s ' + root.q("on=" + root.googleOn + " obs=" + root.obsidianOn + " conn=" + root.googleConnected + " busy=" + root.googleBusy + " sync=" + root.syncRunning + " list=" + root.googleListName + " status=" + root.googleStatus + " hint=" + root.googleHint + " file=" + root.todoFile) + ' > /tmp/taskboard-test.out');
+                else if (c === "rows") root.run('printf %s ' + root.q(root.rows.map(function (r) { return (r.done ? "[x] " : "[ ] ") + r.title + (r.dueLabel ? " (" + r.dueLabel + ")" : "") + (r.repeat ? " R" : "") + " #" + r.tags.map(function (t) { return t.name; }).join(",") + " subs=" + r.subs.map(function (s) { return s.title; }).join("/") + " notes=" + r.notes.length + " open=" + r.open; }).join("\n")) + ' > /tmp/taskboard-test.out');
                 else if (c === "updcheck") root.checkForUpdates();
                 else if (c === "updnow") root.installUpdate();
                 else if (c === "migrate") { Plasmoid.configuration.manualOrder = false; root.migrateOrder(); }

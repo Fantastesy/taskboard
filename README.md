@@ -10,9 +10,22 @@ Eine Todo-Liste für den Desktop, die direkt als Markdown in deinem [Obsidian](h
 - Wiederkehrende Punkte (täglich, werktags, wöchentlich, monatlich, individuell)
 - Notizen, Links, Dateien und Unteraufgaben pro Punkt
 - Archiv für erledigte Punkte (`Todo-Archiv.md`)
+- **Google Tasks** als Speicher, allein oder zusammen mit Obsidian (ab 2.0, siehe unten)
 - Als **Seitenleiste** am Bildschirmrand (gleitet herein, wenn die Maus an den Rand fährt), auf dem **Desktop** oder **beides**
 - Einstellungen über das Zahnrad: Seite, Breite, Schriftgröße, Hintergrund, Akzentfarbe, Tempo, Einblenden, Erinnerungen, Tastenkürzel, Todo-Datei, Updates
 - Tastenkürzel für einen neuen Eintrag, von überall – Enter speichert sofort (Standard Windows: **Win+Shift+T** bzw. Strg+Alt+T, KDE: **Meta+Shift+T**; im Zahnrad änderbar)
+
+## Google Tasks (ab 2.0)
+
+Im Zahnrad unter „Speichern in“ kannst du Obsidian, Google Tasks oder beides anhaken, bei einer Neuinstallation schon im Setup. Du meldest dich einmal im Browser bei Google an und wählst eine Liste.
+
+- Titel, Datum, Notizen, Unteraufgaben, Erledigt und Reihenfolge stehen in den normalen Feldern von Google Tasks.
+- Uhrzeit, Wiederholung und Tags kann Googles Schnittstelle nicht speichern. Sie stehen deshalb zusammen mit dem Erstellt-Datum in der letzten Zeile der Beschreibung (`⟦tb …⟧`). Eine Uhrzeit, die du direkt bei Google einträgst, sieht Task Board nicht.
+- Abgeglichen wird kurz nach jeder Änderung und sonst alle 2 Minuten. Ändern beide Seiten dasselbe Feld, gewinnt der PC.
+- Hakst du einen Hauptpunkt ab, setzt Google seine Unteraufgaben ebenfalls auf erledigt.
+- Beim Anmelden zeigt Google „Google hat diese App nicht überprüft“: auf „Erweitert“ und dann „Zu Task Board wechseln“ klicken.
+- Der Zugangsschlüssel bleibt auf deinem Computer. „Verbindung trennen“ im Zahnrad löscht ihn, ebenso das Deinstallieren. Mehr dazu in der [Datenschutzerklärung](https://fantastesy.github.io/taskboard/datenschutz.html).
+- Unter Linux wird dafür Python 3 gebraucht (bei Kubuntu, Fedora KDE usw. dabei).
 
 ## Installation unter Windows
 
@@ -74,12 +87,16 @@ node linux/tests/core-test.js         # Tests für die Logik der KDE-Version
 | `src/build-skin.ps1` | erzeugt die Rainmeter-Dateien (`Todo.ini`, Formular, Einstellungen, Rand-Streifen) |
 | `src/todo.lua`, `src/form.lua`, `src/sidebar.lua` | Logik der Liste, des Formulars und der Seitenleiste |
 | `src/hotkey.cs` | kleines Programm für das globale Tastenkürzel |
+| `src/google.cs` | Google Tasks: Anmeldung und Abgleich (Teil von `TaskBoardHotkey.exe`) |
 | `src/notify.ps1`, `src/toast-action.vbs` | Windows-Erinnerungen und deren Knöpfe |
 | `src/update.ps1` | automatische Updates über GitHub-Releases |
 | `installer/` | Inno-Setup-Skript und Hilfsskript für Erkennung/Einrichtung |
 | `linux/kde/package/` | KDE-Plasma-Widget (QML); `contents/code/todo.js` ist die Logik im selben Format wie `todo.lua` |
 | `linux/kde/setup.sh`, `update.sh` | Linux-Setup und automatische Updates |
+| `linux/kde/google-sync.py` | Google Tasks unter Linux, dieselben Regeln wie `src/google.cs` (Python 3, nur Standardbibliothek) |
 | `linux/tests/` | Tests (Logik mit Node, Widget und Setup in einem KDE-Docker-Container) |
+
+Google-Anbindung im Build: `.secrets/google-client.json` (Zugang zum Google-Cloud-Projekt, nicht im Repo) kommt beim Bauen in die Setups.
 
 Für ein Release: Version in `VERSION` erhöhen, beide Builds ausführen, Release mit Tag `v<VERSION>` anlegen und **alle vier** Setups aus `dist` anhängen: `TaskBoard-Setup-<version>.exe`, `TaskBoard-KDE-Setup-<version>.sh` und die gleichen Kopien `ObsidianTodo-Setup-<version>.exe`, `ObsidianTodo-KDE-Setup-<version>.sh`. Die Updater erkennen die Dateien am Namensanfang: ab der Umbenennung `TaskBoard-…` (oder zur Not den alten Namen), Versionen bis 1.3.0 nur `ObsidianTodo-…` – deshalb die Kopien.
 

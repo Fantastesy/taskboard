@@ -1109,6 +1109,7 @@ class GoogleSync
         // Schutz: Datei ohne Punkte, obwohl beim letzten Mal welche da waren -> lieber nichts tun
         if (items == 0 && st.Items.Count >= 3) { GLog.Write("Todo-Datei ohne Punkte - Abgleich ausgesetzt (Schutz)"); return false; }
         AdoptPending();
+        AdoptSame();
 
         // Schutz: verschwinden viele offene Eintraege auf einmal (Datei zurueckgespielt, Google-Liste geleert), erst mal
         // nichts loeschen. Hat es seine Richtigkeit, wird es nach 30 Minuten uebernommen.
@@ -1211,6 +1212,37 @@ class GoogleSync
                 local[kv.Key] = it;
                 return;
             }
+        }
+    }
+
+    // Zeilen ohne gueltige Kennung an Titel, Datum und Status wiedererkennen, statt sie doppelt anzulegen
+    // (Liste hin- und zurueckgewechselt, Datei ohne Kennungen mit einer schon gefuellten Liste verbunden)
+    void AdoptSame()
+    {
+        var free = remote.Values.Where(r => !st.Items.ContainsKey(r.Id) && !local.ContainsKey(r.Id)).ToList();
+        if (free.Count == 0) return;
+        foreach (TBlock b in doc.Blocks())
+        {
+            AdoptSameOne(b.Head, "", free);
+            if (b.Head.Id == null) continue;
+            foreach (TItem s in b.Subs) AdoptSameOne(s, b.Head.Id, free);
+        }
+    }
+    void AdoptSameOne(TItem it, string parent, List<RTask> free)
+    {
+        if (it.P.Title == "") return;
+        if (it.Id != null && (remote.ContainsKey(it.Id) || st.Items.ContainsKey(it.Id))) return;
+        foreach (RTask r in free)
+        {
+            if ((r.Parent ?? "") != parent) continue;
+            Proj p = Proj.OfRemote(r, it.IsSub);
+            if (p.Title != it.P.Title || p.Due != it.P.Due || p.Done != it.P.Done) continue;
+            if (it.Id != null) local.Remove(it.Id);
+            it.Id = r.Id;
+            it.MarkerChanged = true;
+            local[r.Id] = it;
+            free.Remove(r);
+            return;
         }
     }
 

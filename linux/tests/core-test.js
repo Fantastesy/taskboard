@@ -43,9 +43,9 @@ eq('base64 wie Node', Core.toBase64(sample), Buffer.from(sample, 'utf8').toStrin
 // Parse / Aendern / Speichern
 const file = '# Todo\n\n- [ ] B ohne Datum ➕ 2026-10-01\n- [ ] A morgen 📅 2026-11-02\n    - [ ] Teil 1\n    - Notiz https://x.de\n- [x] erledigt ✅ 2026-10-30\n- [x] Gießen 🔁 täglich 📅 2026-10-31 ✅ 2026-11-01\n';
 let m = Core.parse(file);
-eq('Sortierung', m.display.map(t => Core.taskText(t.text)), ['Gießen', 'A morgen', 'B ohne Datum', 'erledigt'].filter(x => x !== 'Gießen').concat([]).length ? ['A morgen', 'B ohne Datum', 'erledigt', 'Gießen'] : []);
+eq('Sortierung (seit 1.3.0: Reihenfolge der Datei, erledigte unten)', m.display.map(t => Core.taskText(t.text)), ['B ohne Datum', 'A morgen', 'erledigt', 'Gießen']);
 eq('Zaehler', [m.openCount, m.doneCount], [2, 2]);
-eq('Unteraufgaben/Notizen', [m.display[0].subs.length, m.display[0].notes], [1, ['Notiz https://x.de']]);
+eq('Unteraufgaben/Notizen', [m.display[1].subs.length, m.display[1].notes], [1, ['Notiz https://x.de']]);
 eq('Rundreise unveraendert', Core.serialize(m), file);
 
 const roll = Core.rollRecurring(m, NOW);
@@ -54,7 +54,7 @@ Core.applyChanges(m, roll.changes);
 eq('Wiederholung neu offen (wie todo.lua: naechster Termin ab heute)', m.lines[7], '- [ ] Gießen 🔁 täglich 📅 2026-11-01');
 
 m = Core.parse(file);
-Core.flip(m, m.display[1].line, NOW);
+Core.flip(m, m.display[0].line, NOW);
 eq('abhaken', m.lines[2], '- [x] B ohne Datum ➕ 2026-10-01 ✅ 2026-11-01');
 m = Core.parse(Core.serialize(m));
 const cl = Core.cleanup(m, NOW);
@@ -64,12 +64,12 @@ eq('nach Archivieren', Core.serialize(m), '# Todo\n\n- [ ] A morgen 📅 2026-11
 
 m = Core.parse(file);
 Core.addTask(m, { title: 'Neu', date: '', time: '15:00', rule: '', notes: ['n1'] }, NOW);
-eq('neuer Punkt hinter dem letzten', m.lines.slice(8, 10), ['- [ ] Neu ⏰ 15:00 📅 2026-11-01 ➕ 2026-11-01', '    - n1']);
+eq('neuer Punkt mit Datum: nach Faelligkeit einsortiert', m.lines.slice(3, 5), ['- [ ] Neu ⏰ 15:00 📅 2026-11-01 ➕ 2026-11-01', '    - n1']);
 
 m = Core.parse(file);
-const t = m.display[0];
+const t = m.display[1];
 Core.editTask(m, t, { title: 'A geaendert', date: '2026-11-05', time: '', rule: 'Mo,Mi', notes: ['neu'] });
-eq('bearbeiten behaelt Unteraufgaben', m.lines.slice(3, 6), ['- [ ] A geaendert 🔁 Mo,Mi 📅 2026-11-05', '    - [ ] Teil 1', '    - neu']);
+eq('bearbeiten behaelt Unteraufgaben', m.lines.slice(2, 5), ['- [ ] A geaendert 🔁 Mo,Mi 📅 2026-11-05', '    - [ ] Teil 1', '    - neu']);
 
 eq('Archiv neu', Core.appendArchive('', [['- [x] a']], NOW).split('\n').slice(-4), ['## November 2026', '', '- [x] a', '']);
 
@@ -80,6 +80,34 @@ eq('Erinnerung nur einmal', Core.dueReminders(m, st, NOW).length, 0);
 
 eq('linkOf Pfad', Core.linkOf('/home/user/Dokumente/a b.pdf'), 'file:///home/user/Dokumente/a%20b.pdf');
 eq('linkOf Wiki', Core.linkOf('siehe [[Rainmeter Todo-Skin]]', 'Vault'), 'obsidian://open?vault=Vault&file=Rainmeter%20Todo-Skin');
+
+// Google-Kennung "%%tb:<id>%%" (Abgleich): unsichtbar, bleibt erhalten, kommt nicht ins Archiv
+const gf = '- [ ] Müll 🔁 täglich %%tb:abc_1-2%%\n- [ ] Post #arbeit ➕ 2026-10-01 %%tb:X9%%\n    - [ ] Marke %%tb:S1%%\n    - Notiz\n- [x] Alt ✅ 2026-10-31 %%tb:D1%%\n';
+let gm = Core.parse(gf);
+eq('Kennung unsichtbar', gm.display.map(t => Core.taskText(t.text)), ['Müll', 'Post', 'Alt']);
+eq('Regel direkt vor der Kennung', Core.ruleOf(gm.display[0].text), 'täglich');
+eq('Formular ohne Kennung', [Core.formOf(gm.display[0]).title, Core.formOf(gm.display[0]).rule], ['Müll', 'täglich']);
+eq('Unteraufgabe im Eingabefeld ohne Kennung', Core.childInput(gm, gm.display[1].subs[0].line), 'Marke');
+Core.flip(gm, gm.display[1].line, NOW);
+eq('abhaken behaelt Kennung', gm.lines[1], '- [x] Post #arbeit ➕ 2026-10-01 %%tb:X9%% ✅ 2026-11-01');
+gm = Core.parse(gf);
+Core.editTask(gm, gm.display[1], { title: 'Post neu', date: '', time: '', rule: '', notes: ['Notiz'], tags: ['arbeit'] });
+eq('bearbeiten behaelt Kennung', gm.lines[1], '- [ ] Post neu #arbeit ➕ 2026-10-01 %%tb:X9%%');
+gm = Core.parse(gf);
+Core.editChild(gm, gm.display[1].subs[0].line, 'Marke kaufen', NOW);
+eq('Unteraufgabe bearbeiten behaelt Kennung', gm.lines[2], '    - [ ] Marke kaufen %%tb:S1%%');
+gm = Core.parse(gf);
+eq('Zeile wiederfinden, auch wenn die Kennung dazugekommen ist', !!Core.findTask(gm, 0, '- [ ] Müll 🔁 täglich'), true);
+eq('Archiv ohne Kennung', Core.blockOf(gm, gm.display[1], 'x', NOW), ['- [ ] Post #arbeit ➕ 2026-10-01 ✅ 2026-11-01', '    - [ ] Marke', '    - Notiz']);
+eq('Erledigte archivieren ohne Kennung', Core.cleanup(gm, NOW).blocks, [['- [x] Alt ✅ 2026-10-31']]);
+const rg = Core.parse('- [x] Müll 🔁 täglich 📅 2026-10-31 ✅ 2026-11-01 %%tb:abc%%\n');
+const rr = Core.rollRecurring(rg, NOW);
+eq('Wiederholung: Archiv ohne Kennung', rr.blocks, [['- [x] Müll 📅 2026-10-31 ✅ 2026-11-01']]);
+Core.applyChanges(rg, rr.changes);
+eq('Wiederholung: Zeile behaelt Kennung', rg.lines[0], '- [ ] Müll 🔁 täglich 📅 2026-11-01 %%tb:abc%%');
+const rs = { notified: {}, snoozed: {} };
+Core.dueReminders(Core.parse('- [ ] Anruf ⏰ 14:00 📅 2026-11-01\n'), rs, NOW);
+eq('Erinnerung nicht doppelt, wenn die Kennung dazukommt', Core.dueReminders(Core.parse('- [ ] Anruf ⏰ 14:00 📅 2026-11-01 %%tb:abc%%\n'), rs, NOW).length, 0);
 
 // echte Datei (nur lesen)
 const real = process.argv[2];

@@ -43,8 +43,9 @@ function dueIsoOf(text) {
 }
 // Wiederholung "🔁 …" reicht bis zum naechsten Symbol ("🔁 alle 2 Wochen", "🔁 Mo,Mi,Fr")
 function repPattern() { return new RegExp('\\s*' + esc(ICON.repeat) + '[^' + SYM + ']*[^\\s' + SYM + ']'); }
+// ohne Google-Kennung: sonst gehoerte sie zur Regel, wenn kein weiteres Symbol dazwischen steht
 function ruleOf(text) {
-    var m = new RegExp(esc(ICON.repeat) + '\\s*([^' + SYM + ']*[^\\s' + SYM + '])').exec(text);
+    var m = new RegExp(esc(ICON.repeat) + '\\s*([^' + SYM + ']*[^\\s' + SYM + '])').exec(stripMarker(text));
     return m ? m[1] : null;
 }
 function normRule(r) { return RULES[r] || r; }
@@ -100,11 +101,17 @@ function nextDate(due, rule, now) {
 
 // ---------- Zeitstempel (➕ erstellt, ✅ erledigt): unsichtbar, bleiben beim Bearbeiten erhalten ----------
 function stamp(icon, now) { return ' ' + icon + ' ' + iso(today(now)); }
+// Kennung der Google-Aufgabe "%%tb:<id>%%" (Google-Abgleich, google-sync.py): wie die Stempel unsichtbar,
+// bleibt beim Bearbeiten erhalten, kommt nicht ins Archiv
+var MARKER = /\s*%%tb:[A-Za-z0-9_=-]+%%/g;
+function stripMarker(text) { return text.replace(MARKER, ''); }
+// gleich = gleich ohne Kennung (der Abgleich kann sie anhaengen, waehrend hier etwas offen ist)
+function sameLine(a, b) { return a === b || (a !== undefined && b !== undefined && stripMarker(a) === stripMarker(b)); }
 function stripStamps(text) {
     [ICON.created, ICON.done].forEach(function (icon) {
         text = text.replace(new RegExp('\\s*' + esc(icon) + '\\s*' + DATE, 'g'), '');
     });
-    return text;
+    return stripMarker(text);
 }
 function stampsOf(text) {
     var s = '';
@@ -112,6 +119,8 @@ function stampsOf(text) {
         var m = new RegExp(esc(icon) + '\\s*(' + DATE + ')').exec(text);
         if (m) s += ' ' + icon + ' ' + m[1];
     });
+    var id = /%%tb:[A-Za-z0-9_=-]+%%/.exec(text);
+    if (id) s += ' ' + id[0];
     return s;
 }
 
@@ -349,13 +358,13 @@ function serialize(model) { return model.bom + model.lines.join(model.nl); }
 // Punkt wiederfinden, auch wenn die Datei inzwischen geaendert wurde
 function findTask(model, lineNo, orig) {
     var d = model.display, i;
-    for (i = 0; i < d.length; i++) if (d[i].line === lineNo && model.lines[d[i].line] === orig) return d[i];
-    for (i = 0; i < d.length; i++) if (model.lines[d[i].line] === orig) return d[i];
+    for (i = 0; i < d.length; i++) if (d[i].line === lineNo && sameLine(model.lines[d[i].line], orig)) return d[i];
+    for (i = 0; i < d.length; i++) if (sameLine(model.lines[d[i].line], orig)) return d[i];
     return null;
 }
 function findChild(model, t, lineNo, orig) {
-    if (model.lines[lineNo] === orig && lineNo > t.line && lineNo <= t.last) return lineNo;
-    for (var k = t.line + 1; k <= t.last; k++) if (model.lines[k] === orig) return k;
+    if (sameLine(model.lines[lineNo], orig) && lineNo > t.line && lineNo <= t.last) return lineNo;
+    for (var k = t.line + 1; k <= t.last; k++) if (sameLine(model.lines[k], orig)) return k;
     return -1;
 }
 
@@ -465,7 +474,7 @@ function blockOf(model, t, mark, now) {
     var indent = /^(\s*)/.exec(lines[t.line])[1];
     var b = [];
     for (var k = t.line; k <= t.last; k++) {
-        var line = lines[k];
+        var line = stripMarker(lines[k]);
         if (line.substring(0, indent.length) === indent) line = line.substring(indent.length);
         if (/\S/.test(line)) b.push(line);
     }
@@ -500,7 +509,7 @@ function rollRecurring(model, now) {
         var rule = t.done && ruleOf(t.text);
         if (!rule) return;
         var line = lines[t.line];
-        var copy = line.substring(/^(\s*)/.exec(line)[1].length).replace(repPattern(), '');
+        var copy = stripMarker(line.substring(/^(\s*)/.exec(line)[1].length).replace(repPattern(), ''));
         if (copy.indexOf(ICON.done) < 0) copy += stamp(ICON.done, now);
         blocks.push([copy]);
         var nxt = ICON.due + ' ' + iso(nextDate(dueOf(t.text), normRule(rule), now));
@@ -527,7 +536,7 @@ function cleanup(model, now) {
             var parent = trim(stripDue(stripStamps(t.text)));
             t.subs.forEach(function (s) {
                 if (!s.done) return;
-                var line = '- [x] ' + s.text;
+                var line = '- [x] ' + stripMarker(s.text);
                 if (s.text.indexOf(ICON.done) < 0) line += stamp(ICON.done, now);
                 blocks.push([line + ' · Unteraufgabe von „' + parent + '“']);
                 remove[s.line] = true;
@@ -546,12 +555,13 @@ function dueReminders(model, state, now) {
     model.display.forEach(function (t) {
         var tm = timeOf(t.text), day = dueOf(t.text);
         if (t.done || !tm || !day) return;
-        var again = state.snoozed[t.text] && d.getTime() >= state.snoozed[t.text];
-        if (state.notified[t.text] && !again) return;
+        var key = stripMarker(t.text);       // ohne Google-Kennung: sonst kaeme die Erinnerung nach dem ersten Abgleich doppelt
+        var again = state.snoozed[key] && d.getTime() >= state.snoozed[key];
+        if (state.notified[key] && !again) return;
         if (day < t0 || (sameDay(day, t0) && mins >= tm.h * 60 + tm.m)) {
-            state.notified[t.text] = true;
-            delete state.snoozed[t.text];
-            out.push({ key: t.text, title: trim(pretty(stripDue(stripStamps(t.text)))), time: timeStr(tm) });
+            state.notified[key] = true;
+            delete state.snoozed[key];
+            out.push({ key: key, title: trim(pretty(stripDue(stripStamps(t.text)))), time: timeStr(tm) });
         }
     });
     return out;

@@ -1,5 +1,18 @@
 # Änderungen
 
+## 2.0.0 – noch nicht veröffentlicht
+
+### Windows und Linux (KDE)
+- **Google Tasks als Speicher:** Deine Einträge können jetzt in deinem Google-Konto liegen, allein oder zusammen mit Obsidian. Im Zahnrad gibt es dafür „Speichern in“ mit zwei Häkchen; mindestens eins bleibt an. Sind beide an, werden `Todo.md` und die Google-Liste in beide Richtungen abgeglichen, kurz nach jeder Änderung und sonst alle 2 Minuten.
+- **Neuinstallation:** Das Setup fragt mit denselben zwei Häkchen, wo gespeichert werden soll, und meldet dich auf Wunsch gleich bei Google an. Bei Updates bleibt alles, wie es ist.
+- **„Liste wählen …“ und „Verbindung trennen“** im Zahnrad. Ohne Obsidian öffnet ein Klick auf den Titel Google Tasks.
+- **Felder bei Google:** Titel, Datum, Notizen, Unteraufgaben, Erledigt und Reihenfolge stehen in den normalen Feldern. Uhrzeit, Wiederholung, Tags und das Erstellt-Datum stehen in der letzten Zeile der Beschreibung, weil Googles Schnittstelle dafür keine Felder hat.
+- **Schutz vor Datenverlust:** Ändern beide Seiten dasselbe Feld, gewinnt der PC. Bei Google gelöschte Einträge kommen ins Archiv. Verschwindet viel auf einmal, wartet der Abgleich 30 Minuten. Nutzen zwei PCs denselben Vault, gleicht nur einer ab.
+- Hakst du einen Hauptpunkt ab, setzt Google seine Unteraufgaben ebenfalls auf erledigt.
+
+### Linux (KDE)
+- Für Google Tasks wird Python 3 gebraucht (bei Kubuntu, Fedora KDE usw. dabei).
+
 ## 1.4.0 – 7. November 2026
 
 ### Windows und Linux (KDE)
