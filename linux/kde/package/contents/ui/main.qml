@@ -33,7 +33,9 @@ PlasmoidItem {
     property var rows: []              // aufbereitete Punkte fuer die Ansicht
     property var openNotes: ({})       // Text eines Punkts -> Notizen aufgeklappt
     property bool collapsed: false
-    property int maxItems: 15
+    // alle Eintraege zeigen (die Liste blaettert, wenn sie nicht auf den Bildschirm passt); die Grenze ist
+    // nur ein Schutz gegen riesige Dateien
+    property int maxItems: 500
     property var reminderState: ({ notified: {}, snoozed: {} })
     property bool busy: false
     property var queue: []
@@ -172,6 +174,9 @@ PlasmoidItem {
             anchors.right: parent.right
             anchors.top: parent.top
             height: Math.min(implicitHeight, parent.height)
+            // hoechstens bildschirmhoch, sonst blaettert die Liste
+            maxHeight: Plasmoid.containment && Plasmoid.containment.availableScreenRect.height > 0
+                ? Plasmoid.containment.availableScreenRect.height - Kirigami.Units.gridUnit * 2 : 1e6
             visible: root.mode !== "sidebar" || root.inPanel
             opacity: root.inPanel ? 1 : root.deskOpacity
             Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
@@ -791,6 +796,8 @@ PlasmoidItem {
                 else if (c === "closesettings") settings.visible = false;
                 else if (c === "reveal") root.reveal();
                 else if (c.indexOf("mode=") === 0) Plasmoid.configuration.mode = c.substring(5);
+                else if (c.indexOf("scroll=") === 0) side.panelList.scrollBy(+c.substring(7));
+                else if (c.indexOf("opendelay=") === 0) Plasmoid.configuration.openDelay = +c.substring(10);
                 else if (c.indexOf("side=") === 0) Plasmoid.configuration.side = c.substring(5);
                 else if (c.indexOf("accent=") === 0) Plasmoid.configuration.accent = c.substring(7);
                 else if (c.indexOf("hotkey=") === 0) root.setHotkey(c.substring(7));

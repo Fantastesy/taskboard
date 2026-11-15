@@ -117,6 +117,68 @@ Window {
         color: P.done
         font: Kirigami.Theme.smallFont
     }
+    // Schieberegler "Seitenleiste öffnen": 0 bis 1,5 s in Schritten von 0,1 s, gezeichnet wie unter Windows
+    // (Linie, Anteil in der Akzentfarbe, runder Knopf, Wert daneben). Ziehen, klicken oder Mausrad;
+    // gespeichert wird beim Loslassen bzw. bei jeder Mausrad-Raste.
+    component DelaySlider: ColumnLayout {
+        id: ds
+        property string caption: ""
+        property int value: 0
+        property int maxMs: 1500
+        property int stepMs: 100
+        property int shown: value
+        onValueChanged: shown = value
+        signal picked(int value)
+        spacing: Kirigami.Units.smallSpacing
+        Layout.fillWidth: true
+        Layout.topMargin: Kirigami.Units.smallSpacing * 3
+        PC3.Label {
+            text: ds.caption
+            color: P.accent(dlg.cfg.accent)
+            font.weight: Font.DemiBold
+        }
+        RowLayout {
+            spacing: Kirigami.Units.largeSpacing
+            Item {
+                id: track
+                implicitWidth: Kirigami.Units.gridUnit * 16
+                implicitHeight: Math.round(Kirigami.Units.gridUnit * 1.65)
+                readonly property real x0: Kirigami.Units.gridUnit * 0.5
+                readonly property real len: width - 2 * x0
+                readonly property real frac: ds.shown / ds.maxMs
+                function at(px) { return Math.max(0, Math.min(ds.maxMs, Math.round((px - x0) / len * ds.maxMs / ds.stepMs) * ds.stepMs)); }
+                Rectangle { x: track.x0; anchors.verticalCenter: parent.verticalCenter; width: track.len; height: 4; radius: 2; color: P.chipStroke }
+                Rectangle { x: track.x0; anchors.verticalCenter: parent.verticalCenter; width: Math.max(4, track.len * track.frac); height: 4; radius: 2; color: P.check(dlg.cfg.accent) }
+                Rectangle {
+                    width: Kirigami.Units.gridUnit; height: width; radius: width / 2
+                    x: track.x0 + track.len * track.frac - width / 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: P.text
+                    border.color: P.check(dlg.cfg.accent); border.width: 2
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onPressed: m => ds.shown = track.at(m.x)
+                    onPositionChanged: m => { if (pressed) ds.shown = track.at(m.x); }
+                    onReleased: ds.picked(ds.shown)
+                }
+                WheelHandler {
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    onWheel: function (ev) {
+                        var d = ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y;
+                        if (d === 0) return;
+                        ds.shown = Math.max(0, Math.min(ds.maxMs, ds.shown + (d > 0 ? ds.stepMs : -ds.stepMs)));
+                        ds.picked(ds.shown);
+                    }
+                }
+            }
+            PC3.Label {
+                text: ds.shown <= 0 ? "Sofort" : (ds.shown / 1000).toFixed(1).replace(".", ",") + " s"
+                color: P.note
+                font.weight: Font.DemiBold
+            }
+        }
+    }
 
 
     Rectangle {
@@ -301,6 +363,12 @@ Window {
                         current: dlg.cfg.speed
                         onPicked: v => dlg.cfg.speed = v
                     }
+                    DelaySlider {
+                        caption: "Seitenleiste öffnen"
+                        value: dlg.cfg.openDelay
+                        onPicked: v => dlg.cfg.openDelay = v
+                    }
+                    Small { text: "So lange muss die Maus am Rand bleiben, bevor die Liste kommt – kurz vorbeistreifen öffnet nichts. Ziehen, klicken oder Mausrad." }
                     Setting {
                         caption: "Beim Anmelden/Aufwachen einblenden"
                         options: [["20 s", 20], ["10 s", 10], ["5 s", 5], ["Aus", 0]]
@@ -427,7 +495,8 @@ Window {
                     ["+ Neuer Eintrag", "neuen Eintrag anlegen, überall auch mit dem Tastenkürzel (siehe oben)"],
                     ["Enter", "speichert den Eintrag sofort (Datum vorher wählen oder später ergänzen)"],
                     ["Titel „Todo“", dlg.app.obsidianOn ? "Liste in Obsidian öffnen" : "Google Tasks öffnen"],
-                    ["Seitenleiste", "Maus an den Bildschirmrand – die Liste gleitet herein"],
+                    ["Seitenleiste", "Maus an den Bildschirmrand – die Liste gleitet herein. Das ✕ oder ein Wechsel in ein anderes Fenster schiebt sie sofort wieder weg"],
+                    ["Mausrad", "durch die Liste blättern, wenn nicht alle Einträge auf den Bildschirm passen"],
                     ["Anmelden, Aufwachen, Entsperren", "die Liste kommt kurz von selbst"],
                     ["Farben", "orange = heute fällig, rot = überfällig"],
                     ["Verschieben auf dem Desktop", "an der Kopfzeile (bei „Todo“) ziehen"],

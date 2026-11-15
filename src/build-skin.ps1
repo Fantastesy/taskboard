@@ -12,6 +12,9 @@ $cal = [char]0xE787      # Calendar
 $rep = [char]0xE8EE      # RepeatAll (wiederkehrend)
 $gear = [char]0xE713     # Setting (Zahnrad)
 $close = [char]0xE711    # Cancel (X)
+# Plaetze in der Liste: Rainmeter kann keine Meter zur Laufzeit anlegen. 40 reichen fuer einen ganzen Bildschirm;
+# passen mehr Eintraege nicht drauf, blaettert man mit dem Mausrad (todo.lua Scroll).
+$maxItems = 40; $maxNotes = 30; $maxSubs = 30
 
 # Symbol-Knopf in der Liste: abgerundete, dunkle Flaeche mit Rand (das Symbol liegt als eigener String-Meter
 # darueber und hat keine Maus-Aktionen, damit Klicks auf die Flaeche durchgehen)
@@ -49,6 +52,9 @@ ContextAction=$obs
 ; Seitenleiste: Maus in der Liste haelt sie offen, Verlassen laesst sie hinausfahren (sidebar.lua)
 MouseOverAction=[!CommandMeasure MeasureSide "Enter()" "TaskBoard\Rand"]
 MouseLeaveAction=[!CommandMeasure MeasureSide "Leave()" "TaskBoard\Rand"][!CommandMeasure MeasureTodo "DragCancel()"]
+; Mausrad: blaettern, wenn nicht alle Eintraege auf den Bildschirm passen
+MouseScrollUpAction=[!CommandMeasure MeasureTodo "Scroll(-2)"]
+MouseScrollDownAction=[!CommandMeasure MeasureTodo "Scroll(2)"]
 
 [Metadata]
 Name=Task Board
@@ -67,9 +73,9 @@ ArchiveUrl=
 TodoOpen=obsidian://open?path=#TodoUrl#
 TodoOpenTip=In Obsidian öffnen
 @IncludeSettings=#@#settings.inc
-MaxItems=15
-MaxNotes=30
-MaxSubs=30
+MaxItems=$maxItems
+MaxNotes=$maxNotes
+MaxSubs=$maxSubs
 Width=460
 ; Einstellungen (Standardwerte; prefs.inc/colors.inc am Ende ueberschreiben sie):
 ; Anzeige sidebar|desktop|both, Seite right|left, Tempo fast|normal|slow, Einblenden Sekunden pro Punkt (0 = aus)
@@ -77,6 +83,7 @@ Mode=sidebar
 LastMode=
 Side=right
 Speed=normal
+OpenDelay=0
 RevealPerItem=10
 RemindOn=1
 RemindLead=0
@@ -270,6 +277,21 @@ FontColor=#ColorDone#
 AntiAlias=1
 Text=#FoldOpen#
 
+; X an derselben Stelle: nur in der Seitenleiste (dort gibt es kein Einklappen), faehrt sie sofort hinaus
+$((IconBtn 'SideClose' '(#Width#-50)' 14 32 '[!CommandMeasure MeasureTodo "CloseSide()"]').Replace('Meter=Shape', "Meter=Shape`r`nHidden=1"))
+[MeterSideClose]
+Meter=String
+DynamicVariables=1
+Hidden=1
+X=(#Width#-34)
+Y=30
+StringAlign=CenterCenter
+FontFace=#IconFace#
+FontSize=(#FontSize#-3)
+FontColor=#ColorDone#
+AntiAlias=1
+Text=$close
+
 
 "@
 
@@ -334,7 +356,7 @@ MouseLeaveAction=[!SetOption $name SolidColor "0,0,0,1"][!UpdateMeter $name][!Re
 
 "@
 }
-for ($i = 1; $i -le 15; $i++) {
+for ($i = 1; $i -le $maxItems; $i++) {
     # Druecken auf den Text startet das Ziehen (todo.lua DragStart); ein normaler Klick hakt trotzdem ab
     $ini += (CheckMeter "Item$i" 12 '#RowH#' '#FontSize#' 600 "[!CommandMeasure MeasureTodo `"Toggle($i)`"]" "[!CommandMeasure MeasureTodo `"Edit($i)`"]" 'Linksklick: abhaken | Rechtsklick: bearbeiten').Replace(
         "[Item$i]`r`nMeter=String", "[Item$i]`r`nMeter=String`r`nLeftMouseDownAction=[!CommandMeasure MeasureTodo `"DragStart($i)`"]").Replace(
@@ -346,10 +368,10 @@ for ($i = 1; $i -le 15; $i++) {
         $ini += "[Tag${i}_$k]`r`nMeter=String`r`nDynamicVariables=1`r`nHidden=1`r`nX=0`r`nY=0`r`nPadding=10,3,10,4`r`nFontFace=#FontFace#`r`nFontSize=(#FontSize#-3)`r`nFontWeight=600`r`nFontColor=255,255,255,255`r`nSolidColor=0,0,0,0`r`nAntiAlias=1`r`nText=`r`n`r`n"
     }
 }
-for ($i = 1; $i -le 30; $i++) {
+for ($i = 1; $i -le $maxSubs; $i++) {
     $ini += CheckMeter "Sub$i" 36 '#NoteH#' '(#FontSize#-1)' 500 "[!CommandMeasure MeasureTodo `"ToggleSub($i)`"]" "[!CommandMeasure MeasureTodo `"EditSub($i)`"]" 'Unteraufgabe - Linksklick: abhaken | Rechtsklick: bearbeiten'
 }
-for ($i = 1; $i -le 15; $i++) {
+for ($i = 1; $i -le $maxItems; $i++) {
 $ini += @"
 [Progress$i]
 Meter=String
@@ -442,7 +464,7 @@ LeftMouseUpAction=[!CommandMeasure MeasureTodo "PickFile($i)"]
 
 "@
 }
-for ($i = 1; $i -le 30; $i++) {
+for ($i = 1; $i -le $maxNotes; $i++) {
 $ini += @"
 [Note$i]
 Meter=String
@@ -481,6 +503,39 @@ FontColor=#ColorDone#
 AntiAlias=1
 Text=
 LeftMouseUpAction=$obs
+
+; Hinweise beim Blaettern (Text setzt todo.lua): weiter oben / weiter unten stehen noch Eintraege, Klick = eine Seite
+[MeterUp]
+Meter=String
+DynamicVariables=1
+Hidden=1
+X=20
+Y=0
+Padding=0,2,8,2
+FontFace=#FontFace#
+FontSize=(#FontSize#-2)
+FontWeight=600
+FontColor=#ColorAccent#
+SolidColor=0,0,0,1
+AntiAlias=1
+Text=
+LeftMouseUpAction=[!CommandMeasure MeasureTodo "ScrollPage(-1)"]
+
+[MeterDown]
+Meter=String
+DynamicVariables=1
+Hidden=1
+X=20
+Y=0
+Padding=0,2,8,2
+FontFace=#FontFace#
+FontSize=(#FontSize#-2)
+FontWeight=600
+FontColor=#ColorAccent#
+SolidColor=0,0,0,1
+AntiAlias=1
+Text=
+LeftMouseUpAction=[!CommandMeasure MeasureTodo "ScrollPage(1)"]
 
 ; "+ Neuer Punkt" als Knopf wie Zahnrad/Pfeil: Flaeche (Breite AddW setzt todo.lua nach der Textbreite) + Text
 [AddBtn]
@@ -522,7 +577,7 @@ Text=Erledigte archivieren
 LeftMouseUpAction=[!CommandMeasure MeasureTodo "Cleanup()"]
 
 ; ---------- Ziehen (todo.lua DragStart/DragOver/DragDrop): nur waehrend des Ziehens sichtbar, ganz oben ----------
-; DropAll faengt das Loslassen ausserhalb der Zeilen ab (= abbrechen), Drop1..15 liegen ueber den Zeilen
+; DropAll faengt das Loslassen ausserhalb der Zeilen ab (= abbrechen), Drop1..MaxItems liegen ueber den Zeilen
 [DropAll]
 Meter=Image
 Hidden=1
@@ -534,7 +589,7 @@ SolidColor=0,0,0,1
 LeftMouseUpAction=[!CommandMeasure MeasureTodo "DragCancel()"]
 
 "@
-for ($i = 1; $i -le 15; $i++) {
+for ($i = 1; $i -le $maxItems; $i++) {
     $ini += "[Drop$i]`r`nMeter=Image`r`nHidden=1`r`nX=0`r`nY=0`r`nW=#Width#`r`nH=1`r`nSolidColor=0,0,0,1`r`nMouseOverAction=[!CommandMeasure MeasureTodo `"DragOver($i)`"]`r`nLeftMouseUpAction=[!CommandMeasure MeasureTodo `"DragDrop($i)`"]`r`n`r`n"
 }
 $ini += @"
@@ -550,7 +605,9 @@ H=3
 SolidColor=#ColorCheck#
 "@
 
-$ini = [regex]::Replace($ini, '(?m)^(\[(?!Rainmeter\]|Metadata\]|Variables\]|Measure|MeterBg\]|MeterTitle\]|MeterCount\]|MeterFold\]|MeterHelp\]|GearBtn\]|FoldBtn\])[^\]]+\]\r?\n)', '$1Group=List'+"`r`n")
+$ini = [regex]::Replace($ini, '(?m)^(\[(?!Rainmeter\]|Metadata\]|Variables\]|Measure|MeterBg\]|MeterTitle\]|MeterCount\]|MeterFold\]|MeterHelp\]|GearBtn\]|FoldBtn\]|SideCloseBtn\]|MeterSideClose\])[^\]]+\]\r?\n)', '$1Group=List'+"`r`n"+'UpdateDivider=-1'+"`r`n")
+# UpdateDivider=-1: die Listen-Meter (40 Plaetze samt Notizen/Unteraufgaben, die meisten versteckt) nicht jede
+# Sekunde neu einlesen. todo.lua aktualisiert sie selbst (!UpdateMeter * am Ende von render), Maus-Effekte auch.
 [IO.File]::WriteAllText("$skin\Todo.ini", $ini, [Text.Encoding]::Unicode)
 
 # ---------- Formular: eigene Config TaskBoard\Formular (neuer Punkt / bearbeiten), Logik in form.lua ----------
@@ -1102,7 +1159,8 @@ $helpLines = @(
     '+ Neuer Eintrag: neuen Eintrag anlegen, überall auch mit dem Tastenkürzel (siehe oben)'
     'Enter: speichert den Eintrag sofort (Datum vorher wählen oder später ergänzen)'
     'Titel „Todo“: Liste in Obsidian öffnen'
-    'Seitenleiste: Maus an den Bildschirmrand – die Liste fährt herein'
+    'Seitenleiste: Maus an den Bildschirmrand – die Liste fährt herein. Das ✕ oder ein Klick in ein anderes Fenster schiebt sie sofort wieder weg'
+    'Mausrad: durch die Liste blättern, wenn nicht alle Einträge auf den Bildschirm passen'
     'Anmelden, Aufwachen, Entsperren: die Liste kommt kurz von selbst'
     'Farben: orange = heute fällig, rot = überfällig'
     'Erledigte archivieren: abgehakte Einträge wandern ins Archiv'
@@ -1269,6 +1327,7 @@ Width=460
 Mode=sidebar
 Side=right
 Speed=normal
+OpenDelay=0
 FontSize=13
 Opacity=170
 RevealPerItem=10
@@ -1470,6 +1529,55 @@ $hini += Row 'Speed' 'Tempo der Seitenleiste' $colR '12R' '#Speed#' @(
     @('Schnell', '^fast$', "$(P Speed fast)$refAll"),
     @('Normal', '^normal$', "$(P Speed normal)$refAll"),
     @('Gemütlich', '^slow$', "$(P Speed slow)$refAll"))
+# Schieberegler "Seitenleiste öffnen": 0 bis 1,5 s in Schritten von 0,1 s (settings.lua OpenPress/OpenHover/
+# OpenRelease/OpenStep). Rainmeter kennt kein Ziehen: 16 unsichtbare Abschnitte liegen ueber dem Regler, Druecken
+# auf einem beginnt, Ueberfahren der anderen mit gedrueckter Taste verschiebt, Loslassen speichert.
+$hini += Caption 'CapOpen' 'Seitenleiste öffnen' $colR '22R'
+$slW = 300; $slX0 = 9; $slLen = $slW - 2 * $slX0; $openMax = 1500; $openStep = 100; $openN = $openMax / $openStep
+$sm = '[!CommandMeasure MeasureSettings "{0}"]'
+$hini += @"
+[OpenTrack]
+Meter=Shape
+X=$colR
+Y=10R
+DynamicVariables=1
+Shape=Rectangle 0,0,$slW,$btnH | Fill Color 0,0,0,1 | StrokeWidth 0
+Shape2=Rectangle $slX0,15,$slLen,4,2 | Fill Color 255,255,255,38 | StrokeWidth 0
+Shape3=Rectangle $slX0,15,(Max($slLen*#OpenDelay#/$openMax,4)),4,2 | Fill Color #ColorCheck# | StrokeWidth 0
+Shape4=Ellipse ($slX0+$slLen*#OpenDelay#/$openMax),17,9 | Fill Color #ColorText# | StrokeWidth 2 | Stroke Color #ColorCheck#
+MouseLeaveAction=$($sm -f 'OpenRelease()')
+MouseScrollUpAction=$($sm -f 'OpenStep(1)')
+MouseScrollDownAction=$($sm -f 'OpenStep(-1)')
+
+
+"@
+for ($i = 0; $i -le $openN; $i++) {
+    $l = [Math]::Max(0, [int][Math]::Round($slX0 + ($i - 0.5) * $slLen / $openN))
+    $r = [Math]::Min($slW, [int][Math]::Round($slX0 + ($i + 0.5) * $slLen / $openN))
+    if ($i -eq $openN) { $r = $slW }
+    $ms = $i * $openStep
+    $hini += "[OpenSeg$i]`r`nMeter=Image`r`nX=$($colR + $l)`r`nY=0r`r`nW=$($r - $l)`r`nH=$btnH`r`nSolidColor=0,0,0,1`r`n" +
+        "LeftMouseDownAction=$($sm -f "OpenPress($ms)")`r`nMouseOverAction=$($sm -f "OpenHover($ms)")`r`nLeftMouseUpAction=$($sm -f 'OpenRelease()')`r`n" +
+        "MouseScrollUpAction=$($sm -f 'OpenStep(1)')`r`nMouseScrollDownAction=$($sm -f 'OpenStep(-1)')`r`n`r`n"
+}
+# Anzeige des Werts rechts neben dem Regler (Text setzt settings.lua: "Sofort" bzw. "0,5 s")
+$hini += @"
+[OpenVal]
+Meter=String
+X=$($colR + $slW + 12)
+Y=6r
+FontFace=#FontFace#
+FontSize=11
+FontWeight=600
+FontColor=#ColorNote#
+AntiAlias=1
+Text=
+
+
+"@
+$script:lastTy = 6
+$hini += Spacer 'EndOpen' $colR
+$hini += Small 'OpenInfo' 'So lange muss die Maus am Rand bleiben, bevor die Liste kommt – kurz vorbeistreifen öffnet nichts. Ziehen, klicken oder Mausrad.' $colR
 $hini += Row 'Reveal' 'Beim Anmelden/Aufwachen einblenden' $colR '22R' '#RevealPerItem#' @(
     @('20 s', '^20$', "$(P RevealPerItem 20)$refAll"),
     @('10 s', '^10$', "$(P RevealPerItem 10)$refAll"),
@@ -1590,6 +1698,7 @@ OnRefreshAction=[!ZPos 2][!Draggable 0][!KeepOnScreen 0][!ClickThrough 0][!SnapE
 [Variables]
 Width=460
 Mode=sidebar
+OpenDelay=0
 @IncludePrefs=#@#prefs.inc
 
 [MeasureSide]

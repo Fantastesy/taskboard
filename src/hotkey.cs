@@ -277,6 +277,92 @@ class TaskBoardHotkey : Form
         return 0;
     }
 
+    // ---------- Seitenleiste wegschieben: TaskBoardHotkey.exe --panel-watch "<Rainmeter.exe>" ----------
+    // sidebar.lua startet diesen Waechter, wenn die Liste als Seitenleiste hereinfaehrt, und legt dazu
+    // panel-open.flag an; faehrt sie hinaus, loescht es die Datei und der Waechter endet. Klickt man solange in
+    // ein Fenster, das nicht zu Rainmeter gehoert (andere Programme, Taskleiste, Desktop), oder tippt in einem
+    // anderen Programm, ruft er todo.lua CloseSide() auf: die Liste faehrt sofort hinaus. Liste, Formular,
+    // Einstellungen und Eingabefelder gehoeren zu Rainmeter und zaehlen nicht. Ein blosser Wechsel des
+    // Vordergrundfensters zaehlt auch nicht: beim Anmelden holen sich startende Programme selbst den Fokus.
+    [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")] static extern uint WindowPid(IntPtr h, out uint pid);
+    static uint PidOf(IntPtr h) { uint pid = 0; if (h != IntPtr.Zero) WindowPid(h, out pid); return pid; }
+    static bool AnyMouseDown()
+    {
+        foreach (int vk in new[] { 0x01, 0x02, 0x04, 0x05, 0x06 }) if ((GetAsyncKeyState(vk) & 0x8000) != 0) return true;
+        return false;
+    }
+    // Tasten, die als "tippt in einem anderen Programm" zaehlen: alles ausser Maustasten, Umschalt/Strg/Alt allein,
+    // Browser-/Medien-/Lautstaerke-Tasten (Play/Pause beim Video ist kein Tippen) und F13-F24 (senden manche
+    // Wachhalte-Programme von selbst)
+    static bool IsWatchKey(int vk)
+    {
+        if (vk <= 0x06) return false;
+        if (vk >= 0x10 && vk <= 0x12) return false;
+        if (vk >= 0xA0 && vk <= 0xB7) return false;
+        if (vk >= 0x7C && vk <= 0x87) return false;
+        if (vk == 0xFF) return false;
+        return true;
+    }
+
+    static int PanelWatch(string dir, string rainmeter)
+    {
+        bool first;
+        using (new Mutex(true, "TaskBoardPanelWatch", out first))
+        {
+            if (!first) return 0;
+            string flag = Path.Combine(dir, "panel-open.flag");
+            var own = new System.Collections.Generic.HashSet<uint>();
+            own.Add((uint)Process.GetCurrentProcess().Id);
+            foreach (var p in Process.GetProcessesByName("Rainmeter"))
+            {
+                own.Add((uint)p.Id);
+                if (!File.Exists(rainmeter)) { try { rainmeter = p.MainModule.FileName; } catch { } }
+            }
+            if (own.Count < 2) return 1;
+            // Tasten und Maus, die beim Start schon gedrueckt sind (z. B. noch vom Tastenkuerzel), zaehlen erst
+            // nach dem Loslassen
+            var keyDown = new bool[256];
+            for (int vk = 0x08; vk < 256; vk++) keyDown[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
+            bool wasDown = AnyMouseDown();
+            var sw = Stopwatch.StartNew();
+            long lastAlive = 0;
+            while (File.Exists(flag))
+            {
+                bool close = false;
+                bool down = AnyMouseDown();
+                if (down && !wasDown)
+                {
+                    PT p;
+                    GetCursorPos(out p);
+                    IntPtr w = WindowFromPoint(p);
+                    if (w != IntPtr.Zero && !own.Contains(PidOf(GetAncestor(w, 2)))) close = true;   // GA_ROOT
+                }
+                wasDown = down;
+                bool foreign = !own.Contains(PidOf(GetForegroundWindow()));
+                for (int vk = 0x08; vk < 256; vk++)
+                {
+                    bool d = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                    if (d && !keyDown[vk] && foreign && IsWatchKey(vk)) close = true;
+                    keyDown[vk] = d;
+                }
+                if (close)
+                {
+                    try { Process.Start(rainmeter, "!CommandMeasure MeasureTodo \"CloseSide()\" TaskBoard"); } catch { }
+                    return 0;
+                }
+                // Rainmeter beendet (dann bliebe die Datei liegen): aufhoeren
+                if (sw.ElapsedMilliseconds - lastAlive > 2000)
+                {
+                    lastAlive = sw.ElapsedMilliseconds;
+                    if (Process.GetProcessesByName("Rainmeter").Length == 0) return 0;
+                }
+                Thread.Sleep(25);
+            }
+            return 0;
+        }
+    }
+
     [STAThread]
     static int Main(string[] args)
     {
@@ -284,6 +370,7 @@ class TaskBoardHotkey : Form
         if (args.Length >= 1 && args[0].StartsWith("--google-", StringComparison.Ordinal)) return GoogleCli.Run(Path.GetDirectoryName(Application.ExecutablePath), args);
         if (args.Length >= 1 && args[0] == "--commit") return Commit(Path.GetDirectoryName(Application.ExecutablePath));
         if (args.Length >= 1 && args[0] == "--commit-now") return CommitNow(Path.GetDirectoryName(Application.ExecutablePath));
+        if (args.Length >= 2 && args[0] == "--panel-watch") return PanelWatch(Path.GetDirectoryName(Application.ExecutablePath), args[1]);
         if (args.Length >= 1 && args[0] == "--record") return Recorder.Record(Path.GetDirectoryName(Application.ExecutablePath), ReadWish(Path.GetDirectoryName(Application.ExecutablePath)));
         Run(args);
         return 0;

@@ -65,6 +65,32 @@ function Initialize() load() end
 local function set(m, o, v) SKIN:Bang('!SetOption', m, o, v) end
 local function show(m, on) SKIN:Bang(on and '!ShowMeter' or '!HideMeter', m) end
 
+-- ---------- Schieberegler "Seitenleiste öffnen": 0 bis 1,5 s in Schritten von 0,1 s ----------
+-- Rainmeter kennt kein Ziehen: 16 unsichtbare Abschnitte OpenSeg0..15 liegen ueber dem Regler (build-skin.ps1).
+-- Druecken beginnt, Ueberfahren mit gedrueckter Taste verschiebt, Loslassen (oder Verlassen des Reglers) speichert.
+-- Waehrend des Ziehens nur anzeigen; gespeichert und neu geladen wird erst danach.
+local OPEN_MAX, OPEN_STEP = 1500, 100
+local openDrag, openDirty = false, false
+local function openNow() return tonumber(SKIN:GetVariable('OpenDelay')) or 0 end
+local function openShow(ms)
+	ms = math.max(0, math.min(OPEN_MAX, ms))
+	SKIN:Bang('!SetVariable', 'OpenDelay', ms)
+	set('OpenVal', 'Text', ms <= 0 and 'Sofort' or (string.format('%.1f s', ms / 1000):gsub('%.', ',')))
+	SKIN:Bang('!UpdateMeter', 'OpenTrack')
+	SKIN:Bang('!UpdateMeter', 'OpenVal')
+	SKIN:Bang('!Redraw')
+end
+local function openSave()
+	openDirty = false
+	SKIN:Bang('!WriteKeyValue', 'Variables', 'OpenDelay', openNow(), '#@#prefs.inc')
+	SKIN:Bang('!Refresh', 'TaskBoard')   -- laedt auch den Rand-Streifen neu (todo.lua setupMode)
+end
+function OpenPress(ms) openDrag = true; openShow(ms) end
+function OpenHover(ms) if openDrag then openShow(ms) end end
+function OpenRelease() if openDrag then openDrag = false; openSave() end end
+-- Mausrad: sofort anzeigen, gespeichert wird beim naechsten Update (eine Drehung mit vielen Rasten = einmal neu laden)
+function OpenStep(d) openShow(openNow() + d * OPEN_STEP); openDirty = true end
+
 -- Tags unter "Tags" in Reihen anordnen, abgerundete Flaechen in TagShapes
 local function render()
 	local cap = SKIN:GetMeter('CapTags')
@@ -236,7 +262,8 @@ function GoogleDone()
 end
 
 function Update()
-	if not drawn then drawn = true; render(); readStatus(); storeView() end
+	if not drawn then drawn = true; render(); readStatus(); storeView(); openShow(openNow()) end
+	if openDirty and not openDrag then openSave() end
 	keepWatch(adding)
 	local now = os.time()
 	if now - lastPoll >= 2 then

@@ -11,8 +11,9 @@ Eine Todo-Liste für den Desktop, die direkt als Markdown in deinem [Obsidian](h
 - Notizen, Links, Dateien und Unteraufgaben pro Punkt
 - Archiv für erledigte Punkte (`Todo-Archiv.md`)
 - **Google Tasks** als Speicher, allein oder zusammen mit Obsidian (ab 2.0, siehe unten)
-- Als **Seitenleiste** am Bildschirmrand (gleitet herein, wenn die Maus an den Rand fährt), auf dem **Desktop** oder **beides**
-- Einstellungen über das Zahnrad: Seite, Breite, Schriftgröße, Hintergrund, Akzentfarbe, Tempo, Einblenden, Erinnerungen, Tastenkürzel, Todo-Datei, Updates
+- Als **Seitenleiste** am Bildschirmrand (gleitet herein, wenn die Maus an den Rand fährt; ✕ oder ein Klick in ein anderes Fenster schiebt sie wieder weg), auf dem **Desktop** oder **beides**
+- Lange Listen: passen nicht alle Einträge auf den Bildschirm, blättert man mit dem Mausrad
+- Einstellungen über das Zahnrad: Seite, Breite, Schriftgröße, Hintergrund, Akzentfarbe, Tempo, Öffnen (Schieberegler: sofort bis 1,5 s Warten am Rand), Einblenden, Erinnerungen, Tastenkürzel, Todo-Datei, Updates
 - Tastenkürzel für einen neuen Eintrag, von überall – Enter speichert sofort (Standard Windows: **Win+Shift+T** bzw. Strg+Alt+T, KDE: **Meta+Shift+T**; im Zahnrad änderbar)
 
 ## Google Tasks (ab 2.0)

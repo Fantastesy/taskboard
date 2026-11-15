@@ -1,5 +1,20 @@
 # Änderungen
 
+## 2.1.0 – 16. November 2026
+
+### Windows und Linux (KDE)
+- **Lange Listen:** Die Liste zeigt nicht mehr nur 15 Einträge, sondern wächst mit. Passt sie nicht mehr auf den Bildschirm, blätterst du mit dem Mausrad; oben bzw. unten steht dann „▴ N weitere“ / „▾ N weitere“ (anklicken blättert eine Seite).
+- **Seitenleiste nur so groß, wie man sie sieht:** Unter der Liste lag bisher eine unsichtbare Fläche bis zum Bildschirmrand, die Klicks auf den Desktop, Symbole und die Taskleisten-Symbole abfing. Die ist weg. Damit die Liste trotzdem offen bleibt, wenn du vom Rand zur Liste fährst, wartet sie dafür 1,5 Sekunden.
+- **✕ in der Seitenleiste:** Oben rechts steht jetzt immer ein ✕. Ein Klick schiebt die Seitenleiste sofort weg, auch direkt nach dem Anmelden.
+- **Sofort zu bei Klick woanders:** Klickst du in ein anderes Fenster, auf den Desktop oder die Taskleiste, oder tippst du in einem anderen Programm, fährt die Seitenleiste sofort hinaus, auch während sie nach dem Anmelden eingeblendet ist. Unter Linux reicht dafür der Wechsel in ein anderes Programm (Wayland meldet einem Widget keine Klicks in fremde Fenster).
+- **Neue Einstellung „Seitenleiste öffnen“ mit Schieberegler:** von Sofort (wie bisher, Standard) bis 1,5 Sekunden in Schritten von 0,1 s – ziehen, klicken oder Mausrad. Mit Wartezeit kommt die Liste erst, wenn die Maus so lange am Rand bleibt; kurz vorbeistreifen öffnet nichts, ein kleines Zittern an der Bildschirmkante bricht das Warten aber nicht ab.
+
+### Windows
+- Die Wartezeit nach dem Verlassen der Liste stimmt jetzt genau (vorher nur auf ganze Sekunden): Schnell 0,3 s, Normal 1 s, Gemütlich 2 s – wie unter Linux.
+- Die Seitenleiste fährt gleichmäßig herein und hinaus. Bisher ruckelte sie, weil Rainmeter die Bilder der Bewegung unregelmäßig liefert.
+- „Beides“: Die Desktop-Liste blendet vor dem Hereinfahren kürzer aus (0,15 s), mit Wartezeit schon während des Wartens – die Seitenleiste kommt dadurch schneller.
+- Auch auf dem Desktop blieb das unsichtbare Fenster nach dem Archivieren oder Ziehen manchmal größer als die Liste und fing Klicks ab. Behoben.
+
 ## 2.0.0 – 8. November 2026
 
 ### Windows und Linux (KDE)

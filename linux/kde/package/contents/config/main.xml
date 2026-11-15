@@ -19,6 +19,8 @@
     <entry name="opacity" type="Int"><default>170</default></entry>
     <!-- fast | normal | slow: Wartezeit nach Maus-weg -->
     <entry name="speed" type="String"><default>normal</default></entry>
+    <!-- Seitenleiste oeffnen: so viele Millisekunden muss die Maus am Rand bleiben (0 = sofort, 400, 800) -->
+    <entry name="openDelay" type="Int"><default>0</default></entry>
     <!-- Einblenden: Sekunden pro offenem Punkt, 0 = aus -->
     <entry name="revealPerItem" type="Int"><default>10</default></entry>
     <entry name="remindOn" type="Bool"><default>true</default></entry>

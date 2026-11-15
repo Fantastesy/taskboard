@@ -9,6 +9,11 @@ local lines, display, bom, nl, lastContent, lastOpen, lastDone
 local itemY, addY, noteMap, subMap = {}, {}, {}, {}
 -- Unterkante jedes Punkts (samt Unteraufgaben/Notizen), Hoehe des Hintergrunds, Tag-Farben: fuers Ziehen und die Etiketten
 local itemBot, lastBgH, tagConf = {}, nil, {}
+-- Blaettern: Platz i (Meter Item<i> usw.) zeigt slots[i] = display[first + i - 1]. Passt nicht alles auf den
+-- Bildschirm, stehen moreBelow Punkte unter dem letzten Platz (Mausrad bzw. "▾ N weitere").
+local slots, first, moreBelow = {}, 1, 0
+-- Platz zuletzt benutzt: nur benutzte Plaetze muessen beim Neuzeichnen versteckt werden
+local slotUsed = {}
 local expanded = {}
 -- laufende Bearbeitung: mode = 'task' | 'note' | 'addnote' | 'sub' | 'addsub'
 local edit
@@ -28,7 +33,7 @@ local CHECK = '^%s*[-*+] %[([ xX])%] ?(.*)$'
 function Initialize()
 	path = SKIN:GetVariable('TodoFile')
 	vault = SKIN:GetVariable('VaultName')
-	maxItems = tonumber(SKIN:GetVariable('MaxItems')) or 15
+	maxItems = tonumber(SKIN:GetVariable('MaxItems')) or 40
 	maxNotes = tonumber(SKIN:GetVariable('MaxNotes')) or 30
 	maxSubs = tonumber(SKIN:GetVariable('MaxSubs')) or 30
 	rowH = tonumber(SKIN:GetVariable('RowH')) or 34
@@ -74,7 +79,7 @@ function setupMode()
 	if op <= 1 then
 		SKIN:Bang('!SetOptionGroup', 'List', 'StringEffect', 'Shadow')
 		SKIN:Bang('!SetOptionGroup', 'List', 'FontEffectColor', '0,0,0,210')
-		for _, m in ipairs({ 'MeterTitle', 'MeterCount', 'MeterHelp', 'MeterFold' }) do
+		for _, m in ipairs({ 'MeterTitle', 'MeterCount', 'MeterHelp', 'MeterFold', 'MeterSideClose' }) do
 			SKIN:Bang('!SetOption', m, 'StringEffect', 'Shadow')
 			SKIN:Bang('!SetOption', m, 'FontEffectColor', '0,0,0,210')
 		end
@@ -576,9 +581,10 @@ local function heightOf(m, minH)
 	return math.max(SKIN:GetMeter(m):GetH(), minH)
 end
 
--- Zaehler oben rechts; waehrend die Liste eingeblendet ist: Knopf 'Ausblenden'
+-- Zaehler oben rechts; waehrend die Liste auf dem Desktop eingeblendet ist: Knopf 'Ausblenden'
+-- (in der Seitenleiste gibt es dafuer immer das X daneben)
 local function setCount(openCount)
-	if revealUntil then
+	if revealUntil and mode ~= 'sidebar' and not panel then
 		SKIN:Bang('!SetOption', 'MeterCount', 'Text', 'Ausblenden ✕')
 		SKIN:Bang('!SetOption', 'MeterCount', 'FontColor', SKIN:GetVariable('ColorAccent'))
 	else
@@ -599,29 +605,42 @@ local function parkList()
 	end
 	for k = 1, maxNotes do park('Note' .. k) end
 	for k = 1, maxSubs do park('Sub' .. k); park('Sub' .. k .. 'Box') end
-	for _, m in ipairs({ 'MeterMore', 'AddBtn', 'MeterAdd', 'MeterClean', 'DropAll', 'DropLine' }) do park(m) end
+	for _, m in ipairs({ 'MeterMore', 'MeterUp', 'MeterDown', 'AddBtn', 'MeterAdd', 'MeterClean', 'DropAll', 'DropLine' }) do park(m) end
+	for i = 1, maxItems do slotUsed[i] = false end
 end
 
-local function render(openCount, doneCount)
+-- Platz i leeren: verstecken und nach oben schieben (versteckte Meter zaehlen mit ihrer Position in die
+-- Fenstergroesse - unten liegengelassen, finge das unsichtbare Fenster Klicks auf den Desktop ab)
+local SLOTPARTS = { 'Item', 'Progress', 'Clip', 'NoteAdd', 'SubAdd', 'FileAdd' }
+local function hideSlot(i)
+	slots[i] = nil
+	itemY[i], itemBot[i], addY[i] = nil, nil, nil
+	if slotUsed[i] == false then return end
+	slotUsed[i] = false
+	local function off(m) SKIN:Bang('!HideMeter', m); SKIN:Bang('!SetOption', m, 'Y', 0) end
+	for _, p in ipairs(SLOTPARTS) do off(p .. i) end
+	off('Item' .. i .. 'Box'); off('Clip' .. i .. 'Btn')
+	for k = 1, MAXTAGS do off('Tag' .. i .. '_' .. k); off('TagBg' .. i .. '_' .. k) end
+end
+local function hideMeter(m) SKIN:Bang('!HideMeter', m); SKIN:Bang('!SetOption', m, 'Y', 0) end
+
+local function render(openCount, doneCount, depth)
 	lastOpen, lastDone = openCount, doneCount
 	setCount(openCount)
-	-- Seitenleiste (oder "Beides" gerade als Panel am Rand): Liste ist ohnehin bildschirmhoch -> kein Einklappen,
-	-- Pfeil weg und "x offen" an den rechten Rand
+	-- Seitenleiste (oder "Beides" gerade als Panel am Rand): kein Einklappen; statt des Pfeils ein X,
+	-- das die Seitenleiste sofort hinausfahren laesst
 	local asPanel = mode == 'sidebar' or panel
 	local isCollapsed = collapsed and not asPanel
-	if asPanel then
-		SKIN:Bang('!HideMeter', 'MeterFold')
-		SKIN:Bang('!HideMeter', 'FoldBtn')
-		SKIN:Bang('!SetOption', 'MeterCount', 'X', width - 20)
-	else
-		SKIN:Bang('!ShowMeter', 'MeterFold')
-		SKIN:Bang('!ShowMeter', 'FoldBtn')
-		SKIN:Bang('!SetOption', 'MeterCount', 'X', width - 62)
-	end
+	SKIN:Bang(asPanel and '!HideMeter' or '!ShowMeter', 'MeterFold')
+	SKIN:Bang(asPanel and '!HideMeter' or '!ShowMeter', 'FoldBtn')
+	SKIN:Bang(asPanel and '!ShowMeter' or '!HideMeter', 'MeterSideClose')
+	SKIN:Bang(asPanel and '!ShowMeter' or '!HideMeter', 'SideCloseBtn')
+	SKIN:Bang('!SetOption', 'MeterCount', 'X', width - 62)
 	SKIN:Bang('!SetOption', 'MeterFold', 'Text', SKIN:GetVariable(isCollapsed and 'FoldClosed' or 'FoldOpen'))
 	if isCollapsed then
 		SKIN:Bang('!HideMeterGroup', 'List')
 		parkList()
+		slots, moreBelow = {}, 0
 		SKIN:Bang('!SetOption', 'MeterBg', 'Shape', 'Rectangle 0.5,0.5,' .. (width - 1) .. ',' .. (listTop - 5) .. ',12 | Fill Color #ColorBg# | StrokeWidth 1 | Stroke Color #ColorBorder#')
 		SKIN:Bang('!SetOption', 'MeterBg', 'Shape2', 'Rectangle 0,0,0,0 | StrokeWidth 0')
 		SKIN:Bang('!UpdateMeter', '*')
@@ -643,10 +662,35 @@ local function render(openCount, doneCount)
 	local y = listTop
 	local n, s = 0, 0
 	noteMap, subMap = {}, {}
+
+	-- Platz fuer die Eintraege: Seitenleiste bis zum unteren Bildschirmrand, Desktop bis zum unteren Rand des
+	-- Arbeitsbereichs. Darunter kommen noch "▾ N weitere" und "+ Neuer Eintrag" (footer).
+	local footer = (rowH - 6) + 6 + math.max(rowH, 32) + 16
+	local bottom
+	if asPanel then
+		bottom = workH - 16
+	else
+		bottom = math.max((tonumber(SKIN:GetVariable('WORKAREAY')) or 0) + workH - SKIN:GetY() - 8, 400)
+	end
+	local limit = bottom - footer
+	if first > #display then first = math.max(1, #display) end
+	if first > 1 then
+		-- weiter oben stehen noch Eintraege: Hinweis, Klick blaettert zurueck
+		SKIN:Bang('!SetOption', 'MeterUp', 'Text', '▴ ' .. (first - 1) .. ' weitere')
+		SKIN:Bang('!SetOption', 'MeterUp', 'Y', y - 4)
+		SKIN:Bang('!ShowMeter', 'MeterUp')
+		y = y + rowH - 6
+	else
+		hideMeter('MeterUp')
+	end
+	local shown, full = 0, false
 	for i = 1, maxItems do
 		local m = 'Item' .. i
-		local t = display[i]
+		local t = not full and display[first + i - 1] or nil
 		if t then
+			slots[i] = t
+			slotUsed[i] = true
+			local y0, n0, s0 = y, n, s
 			local count = #t.notes
 			local open = expanded[stripMarker(t.text)]
 			local subsDone = 0
@@ -671,8 +715,8 @@ local function render(openCount, doneCount)
 					SKIN:Bang('!UpdateMeter', tm)
 					tw = tw + SKIN:GetMeter(tm):GetW() + 5
 				else
-					SKIN:Bang('!HideMeter', tm)
-					SKIN:Bang('!HideMeter', 'TagBg' .. i .. '_' .. k)
+					hideMeter(tm)
+					hideMeter('TagBg' .. i .. '_' .. k)
 				end
 			end
 
@@ -684,7 +728,7 @@ local function render(openCount, doneCount)
 				SKIN:Bang('!ShowMeter', 'Progress' .. i)
 				clipW = width - 183
 			else
-				SKIN:Bang('!HideMeter', 'Progress' .. i)
+				hideMeter('Progress' .. i)
 				clipW = width - 129
 			end
 			-- Tags: passen Text und Etiketten in eine Zeile, direkt hinter den Text, sonst in eine eigene Zeile darunter
@@ -754,38 +798,51 @@ local function render(openCount, doneCount)
 				addY[i] = y
 				y = y + noteH + 4
 			else
-				SKIN:Bang('!HideMeter', 'NoteAdd' .. i)
-				SKIN:Bang('!HideMeter', 'SubAdd' .. i)
-				SKIN:Bang('!HideMeter', 'FileAdd' .. i)
+				hideMeter('NoteAdd' .. i)
+				hideMeter('SubAdd' .. i)
+				hideMeter('FileAdd' .. i)
 			end
 			if #t.subs > 0 and not open then y = y + 4 end
 			itemBot[i] = y
-		else
-			hideCheck(m)
-			itemY[i], itemBot[i] = nil, nil
-			for _, p in ipairs({ 'Clip' .. i, 'Clip' .. i .. 'Btn', 'Progress' .. i, 'NoteAdd' .. i, 'SubAdd' .. i, 'FileAdd' .. i,
-				'Tag' .. i .. '_1', 'Tag' .. i .. '_2', 'Tag' .. i .. '_3',
-				'TagBg' .. i .. '_1', 'TagBg' .. i .. '_2', 'TagBg' .. i .. '_3' }) do
-				SKIN:Bang('!HideMeter', p)
+			if y > limit and shown > 0 then
+				-- passt nicht mehr auf den Bildschirm: wieder weg, der Rest kommt per Mausrad
+				for k = n0 + 1, n do noteMap[k] = nil end
+				for k = s0 + 1, s do subMap[k] = nil end
+				y, n, s = y0, n0, s0
+				hideSlot(i)
+				full = true
+			else
+				shown = i
 			end
+		else
+			hideSlot(i)
 		end
 	end
-	for k = n + 1, maxNotes do SKIN:Bang('!HideMeter', 'Note' .. k) end
-	for k = s + 1, maxSubs do hideCheck('Sub' .. k) end
+	for k = n + 1, maxNotes do hideMeter('Note' .. k) end
+	for k = s + 1, maxSubs do hideMeter('Sub' .. k); hideMeter('Sub' .. k .. 'Box') end
+	moreBelow = math.max(0, #display - (first - 1) - shown)
 
-	local hidden = #display - maxItems
+	-- hochgeblaettert, aber unten ist inzwischen Platz (Eintraege erledigt/archiviert): zurueckblaettern
+	if moreBelow == 0 and first > 1 and limit - y >= rowH and (depth or 0) < 10 then
+		first = first - 1
+		return render(openCount, doneCount, (depth or 0) + 1)
+	end
+
+	if moreBelow > 0 then
+		SKIN:Bang('!SetOption', 'MeterDown', 'Text', '▾ ' .. moreBelow .. ' weitere')
+		SKIN:Bang('!SetOption', 'MeterDown', 'Y', y)
+		SKIN:Bang('!ShowMeter', 'MeterDown')
+		y = y + rowH - 6
+	else
+		hideMeter('MeterDown')
+	end
 	if #display == 0 then
 		SKIN:Bang('!SetOption', 'MeterMore', 'Text', 'Alles erledigt')
 		SKIN:Bang('!SetOption', 'MeterMore', 'Y', y)
 		SKIN:Bang('!ShowMeter', 'MeterMore')
 		y = y + rowH
-	elseif hidden > 0 then
-		SKIN:Bang('!SetOption', 'MeterMore', 'Text', '+ ' .. hidden .. (SKIN:GetVariable('ObsidianOn') ~= '0' and ' weitere in Obsidian' or ' weitere bei Google'))
-		SKIN:Bang('!SetOption', 'MeterMore', 'Y', y)
-		SKIN:Bang('!ShowMeter', 'MeterMore')
-		y = y + rowH
 	else
-		SKIN:Bang('!HideMeter', 'MeterMore')
+		hideMeter('MeterMore')
 	end
 
 	y = y + 6
@@ -800,14 +857,12 @@ local function render(openCount, doneCount)
 	if doneCount > 0 then SKIN:Bang('!ShowMeter', 'MeterClean') else SKIN:Bang('!HideMeter', 'MeterClean') end
 	y = y + math.max(rowH, 32) + 16
 
-	-- Hintergrund nur so hoch wie die Eintraege (auch in der Seitenleiste; frueher bildschirmhoch,
-	-- das sah bei "Durchsichtig" wie ein leerer Rahmen aus und hat Klicks darunter abgefangen)
-	-- Seitenleiste: darunter eine unsichtbare Flaeche (Deckkraft 1) bis unten, damit die Liste offen bleibt,
-	-- wenn die Maus vom Rand (Bildschirmmitte) zur Liste hinauf faehrt
+	-- Hintergrund nur so hoch wie die Eintraege, und das Fenster auch: Klicks darunter gehen auf den Desktop.
+	-- (Bis 2.0 lag in der Seitenleiste darunter eine unsichtbare Flaeche bis zum Bildschirmrand, damit die Liste
+	-- offen blieb, wenn die Maus vom Rand zur Liste hinauf faehrt. Das macht jetzt eine Wartezeit in sidebar.lua.)
 	local bgH = y
 	lastBgH = bgH
-	local hitH = (mode == 'sidebar' or panel) and math.max(y, workH - 16) or 0
-	SKIN:Bang('!SetOption', 'MeterBg', 'Shape2', 'Rectangle 0,0,' .. width .. ',' .. hitH .. ' | Fill Color 0,0,0,1 | StrokeWidth 0')
+	SKIN:Bang('!SetOption', 'MeterBg', 'Shape2', 'Rectangle 0,0,0,0 | StrokeWidth 0')
 	SKIN:Bang('!SetOption', 'MeterBg', 'Shape', 'Rectangle 0.5,0.5,' .. (width - 1) .. ',' .. (bgH - 1) .. ',12 | Fill Color #ColorBg# | StrokeWidth 1 | Stroke Color #ColorBorder#')
 	setCount(openCount)
 	SKIN:Bang('!UpdateMeter', '*')
@@ -1036,7 +1091,7 @@ end
 
 function Toggle(i)
 	refresh(true)
-	local t = display[i]
+	local t = slots[i]
 	if not t then return end
 	flip(t.line)
 	save()
@@ -1086,7 +1141,7 @@ end
 
 -- Notizen unter einem Punkt auf-/zuklappen
 function ToggleNotes(i)
-	local t = display and display[i]
+	local t = slots[i]
 	if not t then return end
 	expanded[stripMarker(t.text)] = not expanded[stripMarker(t.text)] or nil
 	render(lastOpen, lastDone)
@@ -1100,19 +1155,20 @@ end
 local drag
 local function dragHide()
 	SKIN:Bang('!HideMeter', 'DropAll')
-	SKIN:Bang('!HideMeter', 'DropLine')
-	for k = 1, maxItems do SKIN:Bang('!HideMeter', 'Drop' .. k) end
+	hideMeter('DropLine')
+	-- auch nach oben schieben: versteckte Meter zaehlen mit ihrer Position in die Fenstergroesse
+	for k = 1, maxItems do hideMeter('Drop' .. k) end
 	SKIN:Bang('!UpdateMeter', '*')
 	SKIN:Bang('!Redraw')
 end
 function DragStart(i)
-	local t = display and display[i]
+	local t = slots[i]
 	if not t or t.done or edit or collapsed then return end
 	drag = { from = i, to = i, moved = false, line = t.line, orig = lines[t.line] }
 	SKIN:Bang('!SetOption', 'DropAll', 'H', lastBgH or 400)
 	SKIN:Bang('!ShowMeter', 'DropAll')
 	for k = 1, maxItems do
-		if display[k] and itemY[k] and itemBot[k] then
+		if slots[k] and itemY[k] and itemBot[k] then
 			SKIN:Bang('!SetOption', 'Drop' .. k, 'Y', itemY[k])
 			SKIN:Bang('!SetOption', 'Drop' .. k, 'H', math.max(itemBot[k] - itemY[k], 1))
 			SKIN:Bang('!ShowMeter', 'Drop' .. k)
@@ -1127,10 +1183,10 @@ function DragOver(j)
 	if not drag then return end
 	if j ~= drag.from then drag.moved = true end
 	local to = j
-	if not display[to] or display[to].done then
+	if not slots[to] or slots[to].done then
 		-- auf einen erledigten Punkt gezogen: hinter den letzten offenen
 		to = nil
-		for k = 1, maxItems do if display[k] and not display[k].done and itemY[k] then to = k end end
+		for k = 1, maxItems do if slots[k] and not slots[k].done and itemY[k] then to = k end end
 	end
 	if not to then return end
 	drag.to = to
@@ -1155,13 +1211,40 @@ function DragDrop(j)
 	if not d then return end
 	if j == d.from and not d.moved then return Toggle(d.from) end
 	if d.to == d.from then return end
-	local target = display[d.to]
+	local target = slots[d.to]
 	if not target then return end
 	local toLine, toOrig = target.line, lines[target.line]
 	refresh(true)
 	local a, b = findTask(d.line, d.orig), findTask(toLine, toOrig)
 	if not a or not b or a.done or b.done then return end
 	if moveTask(a, b) then save(); refresh(true) end
+end
+
+-- ---------- Blaettern, wenn nicht alle Eintraege auf den Bildschirm passen ----------
+-- Mausrad (Todo.ini [Rainmeter] MouseScrollUp/DownAction): d Eintraege weiter; Klick auf "▴/▾ N weitere": eine Seite
+function Scroll(d)
+	if not display or drag or edit then return end
+	if collapsed and mode ~= 'sidebar' and not panel then return end
+	local nf = first + d
+	if d > 0 then
+		if moreBelow <= 0 then return end
+		nf = math.min(nf, first + moreBelow)
+	end
+	nf = math.max(1, math.min(nf, #display))
+	if nf == first then return end
+	first = nf
+	render(lastOpen or 0, lastDone or 0)
+end
+function ScrollPage(dir)
+	local shown = 0
+	for i = 1, maxItems do if slots[i] then shown = i end end
+	Scroll(dir * math.max(1, shown - 1))
+end
+-- Seitenleiste faehrt frisch herein (sidebar.lua): wieder oben anfangen
+function ScrollTop()
+	if first == 1 or not display then return end
+	first = 1
+	render(lastOpen or 0, lastDone or 0)
 end
 
 -- Zeilen hinter den letzten Todo-Punkt (samt Notizen) einfuegen, sonst ans Ende (vor eine leere Schlusszeile)
@@ -1196,7 +1279,7 @@ function OpenDialog(i, top)
 		dialog = { mode = 'new' }
 		f = { 'mode=new' }
 	else
-		local t = display[i]
+		local t = slots[i]
 		if not t then return end
 		dialog = { mode = 'edit', line = t.line, orig = lines[t.line] }
 		local h, mi = timeOf(t.text)
@@ -1299,7 +1382,7 @@ end
 function EditNote(n)
 	local nm = noteMap[n]
 	if not nm then return end
-	local t = display[nm.task]
+	local t = slots[nm.task]
 	local orig = lines[nm.line]
 	edit = { mode = 'note', line = nm.line, orig = orig, taskLine = t.line, taskOrig = lines[t.line] }
 	openEditor((orig:gsub('^%s+', ''):gsub('^[-*+] ', '')), 40, nm.y, width - 56)
@@ -1309,7 +1392,7 @@ end
 function EditSub(k)
 	local sm = subMap[k]
 	if not sm then return end
-	local t = display[sm.task]
+	local t = slots[sm.task]
 	local orig = lines[sm.line]
 	local _, text = orig:match(CHECK)
 	edit = { mode = 'sub', line = sm.line, orig = orig, taskLine = t.line, taskOrig = lines[t.line], stamps = stampsOf(text or '') }
@@ -1318,14 +1401,14 @@ end
 
 -- "+ Notiz" / "+ Unteraufgabe": neue Zeile unter dem Punkt
 function AddNote(i)
-	local t = display[i]
+	local t = slots[i]
 	if not t then return end
 	edit = { mode = 'addnote', taskLine = t.line, taskOrig = lines[t.line] }
 	openEditor('', 40, addY[i] or listTop, width - 56)
 end
 
 function AddSub(i)
-	local t = display[i]
+	local t = slots[i]
 	if not t then return end
 	edit = { mode = 'addsub', taskLine = t.line, taskOrig = lines[t.line] }
 	openEditor('', 40, addY[i] or listTop, width - 56)
@@ -1334,7 +1417,7 @@ end
 -- "+ Datei": Windows-Dateiauswahl starten, Ergebnis kommt in FilePicked()
 local pendingFile
 function PickFile(i)
-	local t = display[i]
+	local t = slots[i]
 	if not t then return end
 	pendingFile = { taskLine = t.line, taskOrig = lines[t.line] }
 	SKIN:Bang('!CommandMeasure', 'MeasureFilePick', 'Run')
@@ -1482,7 +1565,14 @@ function HideReveal(button)
 	render(lastOpen, lastDone)
 end
 
--- 'both': vom Desktop-Platz zum bildschirmhohen Panel am Rand und zurueck (aufgerufen von sidebar.lua)
+-- Seitenleiste sofort hinaus: X in der Liste und der Klick-Waechter (TaskBoardHotkey.exe --panel-watch,
+-- wenn man in ein anderes Fenster klickt oder dort tippt). Lief gerade das Einblenden, endet es damit auch.
+function CloseSide()
+	if revealUntil then return HideReveal(true) end
+	if mode ~= 'desktop' then SKIN:Bang('!CommandMeasure', 'MeasureSide', 'Out()', RAND) end
+end
+
+-- 'both': vom Desktop-Platz zum Panel am Rand und zurueck (aufgerufen von sidebar.lua)
 -- Desktop-Platz waehrend "Beides"-Panel zusaetzlich in einer Datei: wird die Liste neu geladen (Einstellung
 -- geaendert, Rainmeter-Neustart, Abmelden), solange sie als Seitenleiste am Rand steht, findet sie so zurueck
 local function panelFile() return SKIN:GetVariable('@') .. 'panel-pos.txt' end
