@@ -4,8 +4,9 @@
 #   chmod +x TaskBoard-KDE-Setup.sh && ./TaskBoard-KDE-Setup.sh
 #
 # Optionen:
-#   --silent      Update ohne Rueckfragen (nutzt die gespeicherte Einrichtung)
-#   --restart     mit --silent: Plasma danach neu starten, damit die neue Version sofort geladen wird
+#   --silent      Update ohne Rueckfragen (nutzt die gespeicherte Einrichtung). Plasma startet 3 s nach dem Ende neu
+#                 (eigener systemd-Dienst), damit die neue Version sofort laeuft
+#   --restart     mit --silent: Plasma sofort im Setup neu starten (Aufruf von ausserhalb von Plasma, "Jetzt aktualisieren")
 #   --uninstall   Widget entfernen (Todo.md und Archiv bleiben erhalten), --yes ohne Rueckfrage
 #   --mode sidebar|desktop|both Anzeige umschalten: Seitenleiste, Desktop oder beides (sonst im Zahnrad-Fenster)
 #
@@ -657,15 +658,32 @@ restart_plasma() {
     (setsid plasmashell >/dev/null 2>&1 &)   # kstart hat nicht geklappt
     sleep 1; pgrep -u "$(id -u)" -x plasmashell >/dev/null 2>&1
 }
-if [ "$SILENT" = 0 ] || [ "$RESTART" = 1 ]; then
+# Automatisches Update (--silent ohne --restart): das Setup laeuft dann als Kind von plasmashell, also im selben
+# systemd-Dienst. Startet es den Dienst direkt neu, beendet systemd das Setup gleich mit. Darum den Neustart in einem
+# eigenen kurzlebigen Dienst, 3 Sekunden nachdem das Setup fertig ist. Der meldet danach auch "aktualisiert".
+restart_plasma_later() {
+    command -v systemd-run >/dev/null 2>&1 || return 1
+    [ "$(systemctl --user is-active plasma-plasmashell.service 2>/dev/null)" = active ] || return 1
+    systemd-run --user --quiet --collect sh -c 'sleep 3; systemctl --user restart plasma-plasmashell.service; sleep 6; command -v notify-send >/dev/null 2>&1 && notify-send -a "$1" -i checkbox "$1 aktualisiert" "Version $2 ist installiert."' sh "$APP" "$VERSION" >>"$LOG" 2>&1
+}
+RESTARTED=0
+if [ "$SILENT" = 1 ] && [ "$RESTART" = 0 ]; then
+    if restart_plasma_later; then RESTARTED=later; log "Plasma wird in 3 Sekunden neu gestartet (neue Widget-Version laden)"
+    else log "Plasma ist kein systemd-Dienst - neue Version nach dem naechsten Anmelden"; fi
+else
     log "Plasma wird neu gestartet (neue Widget-Version laden)"
-    restart_plasma || log "Plasma-Neustart nicht moeglich - neue Version nach dem naechsten Anmelden"
+    if restart_plasma; then RESTARTED=1; else log "Plasma-Neustart nicht moeglich - neue Version nach dem naechsten Anmelden"; fi
     sleep 4
 fi
 
 log "fertig: $TODO_FILE (Version $VERSION)"
 if [ "$SILENT" = 1 ]; then
-    command -v notify-send >/dev/null 2>&1 && { if [ "$RESTART" = 1 ]; then notify-send -a "$APP" -i checkbox "$APP aktualisiert" "Version $VERSION ist installiert."; else notify-send -a "$APP" -i checkbox "$APP aktualisiert" "Version $VERSION ist installiert. Sie wird nach dem nächsten Anmelden aktiv."; fi; }
+    if command -v notify-send >/dev/null 2>&1; then
+        case "$RESTARTED" in
+            1) notify-send -a "$APP" -i checkbox "$APP aktualisiert" "Version $VERSION ist installiert." ;;
+            0) notify-send -a "$APP" -i checkbox "$APP aktualisiert" "Version $VERSION ist installiert. Sie wird nach dem nächsten Anmelden aktiv." ;;
+        esac
+    fi
 else
     case "${MODE:-panel}" in
         panel|sidebar) where="Die Liste gleitet herein, wenn du mit der Maus an den rechten Bildschirmrand fährst, und nach dem Anmelden/Aufklappen kurz von selbst." ;;

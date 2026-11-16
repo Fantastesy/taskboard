@@ -1,5 +1,11 @@
 # Änderungen
 
+## 2.1.1 – 16. November 2026
+
+### Linux (KDE)
+- **Updates sofort aktiv:** Nach einem automatischen Update startet die Arbeitsfläche einmal kurz neu, damit die neue Version gleich läuft. Bisher kam sie erst nach dem nächsten Anmelden, und „Nach Updates suchen“ zeigte so lange die alte Nummer als neueste an.
+- „Nach Updates suchen“ lädt eine schon installierte, aber noch nicht geladene Version sofort.
+
 ## 2.1.0 – 16. November 2026
 
 ### Windows und Linux (KDE)

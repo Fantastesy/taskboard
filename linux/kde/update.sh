@@ -3,6 +3,7 @@
 #   update.sh          automatisch: vom Widget beim Start und alle 6 Stunden, fragt hoechstens alle 6 Stunden bei GitHub
 #   update.sh --check  von Hand ("Nach Updates suchen"): gibt "neu <version>" oder "aktuell <version>" aus
 #   update.sh --now    von Hand ("Jetzt aktualisieren"): sofort installieren und Plasma neu starten (neue Version sofort sichtbar)
+#   update.sh --reload nur Plasma neu starten: das Update ist schon installiert, das Widget laeuft aber noch in der alten Version
 # Gibt es ein neueres Release, wird TaskBoard-KDE-Setup-<version>.sh geladen, die SHA-256-Pruefsumme
 # verglichen und das Setup mit --silent ausgefuehrt. Einstellungen und Todo-Liste bleiben unveraendert.
 DIR="${XDG_DATA_HOME:-$HOME/.local/share}/taskboard"
@@ -13,6 +14,23 @@ ASSET_RE='^(TaskBoard|ObsidianTodo)-KDE-Setup(-[0-9.]+)?\.sh$'
 MODE="${1:-auto}"
 
 log() { printf '%s %s\n' "$(date +%FT%T)" "$*" >> "$LOG"; }
+
+# Plasma neu starten, damit es die neuen Widget-Dateien laedt (laeuft ausserhalb von Plasma, siehe main.qml)
+reload_plasma() {
+    if [ "$(systemctl --user is-active plasma-plasmashell.service 2>/dev/null)" = active ] && systemctl --user restart plasma-plasmashell.service >> "$LOG" 2>&1; then :
+    else
+        if command -v kquitapp6 >/dev/null 2>&1; then kquitapp6 plasmashell >> "$LOG" 2>&1; else pkill -u "$(id -u)" -x plasmashell; fi
+        for i in 1 2 3 4 5 6 7 8 9 10; do pgrep -u "$(id -u)" -x plasmashell >/dev/null 2>&1 || break; sleep 0.5; done
+        if command -v kstart >/dev/null 2>&1; then kstart plasmashell >> "$LOG" 2>&1; fi
+        sleep 2
+        pgrep -u "$(id -u)" -x plasmashell >/dev/null 2>&1 || (setsid plasmashell >/dev/null 2>&1 < /dev/null &)
+    fi
+}
+if [ "$MODE" = --reload ]; then
+    log "Plasma wird neu gestartet (Version $(head -n1 "$DIR/version.txt" 2>/dev/null) laden)"
+    reload_plasma
+    exit 0
+fi
 
 REPO="$(head -n1 "$DIR/repo.txt" 2>/dev/null)"
 if ! printf '%s' "$REPO" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then   # Entwicklerversion
@@ -65,16 +83,10 @@ if [ "$MODE" = --now ]; then
     # aeltere Setups kennen --restart nicht: dann Plasma hier neu starten, damit die neue Version sofort geladen wird
     if [ -n "$before" ] && [ "$(pgrep -u "$(id -u)" -x plasmashell | head -1)" = "$before" ]; then
         log "Plasma wird neu gestartet"
-        if [ "$(systemctl --user is-active plasma-plasmashell.service 2>/dev/null)" = active ] && systemctl --user restart plasma-plasmashell.service >> "$LOG" 2>&1; then :
-        else
-            if command -v kquitapp6 >/dev/null 2>&1; then kquitapp6 plasmashell >> "$LOG" 2>&1; else pkill -u "$(id -u)" -x plasmashell; fi
-            for i in 1 2 3 4 5 6 7 8 9 10; do pgrep -u "$(id -u)" -x plasmashell >/dev/null 2>&1 || break; sleep 0.5; done
-            if command -v kstart >/dev/null 2>&1; then kstart plasmashell >> "$LOG" 2>&1; fi
-            sleep 2
-            pgrep -u "$(id -u)" -x plasmashell >/dev/null 2>&1 || (setsid plasmashell >/dev/null 2>&1 < /dev/null &)
-        fi
+        reload_plasma
     fi
 else
+    # automatisch: das Setup startet Plasma selbst neu, kurz nachdem es fertig ist (seit 2.1.1)
     bash "$TMP" --silent >> "$LOG" 2>&1
     rm -f "$TMP"
 fi

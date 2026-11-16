@@ -402,15 +402,18 @@ PlasmoidItem {
             var m = /^(neu|aktuell) (\S+)/m.exec(out);
             if (!m) { updateState = "error"; return; }
             updateVersion = m[2];
+            // schon installiert, aber dieses Widget ist noch die alte Version (Plasma laedt neue Dateien erst beim Neustart)
+            if (m[1] === "aktuell" && root.version !== "" && m[2] !== root.version) { runUpdater("--reload"); return; }
             updateState = m[1] === "neu" ? "available" : "current";
         });
     }
     // jetzt installieren: laeuft ausserhalb von Plasma weiter (Plasma wird am Ende neu gestartet und laedt die neue Version)
-    function installUpdate() {
+    function installUpdate() { runUpdater("--now"); }
+    function runUpdater(arg) {
         updateState = "installing";
         run('u="${XDG_DATA_HOME:-$HOME/.local/share}/taskboard/update.sh"; '
-            + 'if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --quiet --collect sh "$u" --now >/dev/null 2>&1; then :; '
-            + 'else setsid sh "$u" --now >/dev/null 2>&1 < /dev/null & fi');
+            + 'if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --quiet --collect sh "$u" ' + arg + ' >/dev/null 2>&1; then :; '
+            + 'else setsid sh "$u" ' + arg + ' >/dev/null 2>&1 < /dev/null & fi');
     }
 
     Timer {
